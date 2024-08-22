@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: cutensor-python
+Version: 0.1.0
+Summary: ('PyTorch and Tensorflow Python bindings for cuTENSOR',)
+Home-page: ('https://developer.nvidia.com/cutensor',)
+Download-URL: ('https://github.com/NVIDIA/CUDALibrarySamples/tree/master/cuTENSOR/cutensor',)
+License: BSD
