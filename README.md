@@ -18,7 +18,6 @@ conda activate OpenTenNet
 ```
 #### 2.2 Install Cutensor Python extension
 ##### 2.2.1 Download and extract the cuTENSOR library
-
 https://developer.nvidia.com/cutensor-1-7-0-download-archive
 
 ##### 2.2.2 Set the CUTENSOR ROOT environment variable appropriately.
@@ -30,11 +29,15 @@ export CUTENSOR_ROOT={YOUR libcutensor PATH}
 cd dependencies/cuTENSOR/python
 pip install . 
 ```
-##### 2.2.4 Install quantization dependencies
+#### 2.3 Install quantization dependencies
 ```
 cd $OpenTenNet_PATH
 pip install submodule/python
 pip install submodule/cuda
+```
+### 3. Uncompress 80G open9.pt.tar.gz
+```
+tar -zxvf 80G open9.pt.tar.gz 80G open9.pt
 ```
 
 ## Excecution
