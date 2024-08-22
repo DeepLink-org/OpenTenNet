@@ -2,10 +2,7 @@ import os
 import torch
 import torch.distributed as dist
 import re
-from cutensor.torch import EinsumGeneralV2, getOutputShape
 from .unit_functions import remove_common_suffixes
-
-
 
 class MgTensorSplit:
     '''

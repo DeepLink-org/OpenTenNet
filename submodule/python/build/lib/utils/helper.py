@@ -2,7 +2,6 @@ import os
 import torch
 import torch.distributed as dist
 from torch.distributed import ReduceOp
-from cutensor.torch import EinsumGeneralV2, getOutputShape
 import re
 import argparse
 import time
@@ -128,8 +127,8 @@ class Communicate_quant:
         scales_out = nexttensor.flatten()[:nscales]
         zeros_out = nexttensor.flatten()[nscales:nzeros+nscales]
         uint8_out_ = nexttensor[nzeros+nscales:].view(torch.uint8)[: nint8]
-        if kwargs["world_rank"] == 0:
-            print(f"int4_communicate", flush = True)
+        # if kwargs["world_rank"] == 0:
+        #     print(f"int4_communicate", flush = True)
         # all2all
         dist.all_to_all_single(scales_out, scales_, group = group)
         dist.all_to_all_single(zeros_out, zeros, group = group)
@@ -151,8 +150,8 @@ class Communicate_quant:
             # max0.pow_(1./pow_idx)
             dist.all_reduce(max0, dist.ReduceOp.MAX, group = group)
             self.scales[task_id, nstep] = 65000./max0.item()
-            if kwargs["world_rank"] == 0:
-                print(f"calculate half scale for communication", flush = True)
+            # if kwargs["world_rank"] == 0:
+            #     print(f"calculate half scale for communication", flush = True)
 
         scale_ = self.scales[task_id, nstep]
         nelem = mgtensor.curtensor.numel() # num elem
@@ -187,8 +186,8 @@ class Communicate_quant:
             max0.pow_(1./pow_idx)
             dist.all_reduce(max0, dist.ReduceOp.MAX, group = group)
             self.scales[task_id, nstep] = 127./max0.item()
-            if kwargs["world_rank"] == 0:
-                print(f"calculate int8 scale", flush = True)
+            # if kwargs["world_rank"] == 0:
+            #     print(f"calculate int8 scale", flush = True)
 
         scale_ = self.scales[task_id, nstep]
         nelem = mgtensor.curtensor.numel() # num elem
@@ -304,16 +303,6 @@ def remove_common_suffixes(s1, s2):
     while index < len(s1) and index < len(s2) and s1[-index-1] == s2[-index-1]:
         index += 1
     return s1[:-index], s2[:-index], index        
-        
-def EinsumGeneralV2_choose_method(nstep, mgtensor, ein, tensor_j, **kwargs):
-    ein_list = re.split('->|,', ein)
-    ein_0, ein_1, _ = remove_common_suffixes(ein_list[0], ein_list[1])
-    ein_mm = ein_list[0] + "," + ein_list[1] + "->" + ein_0 + ein_1
-    ein_permute = ein_0 + ein_1 + "->" + ein_list[2]
-
-    newshape = getOutputShape(ein, mgtensor.curtensor, tensor_j, **kwargs)
-    EinsumGeneralV2(mgtensor.nexttensor, ein, mgtensor.curtensor, tensor_j, **kwargs)
-    mgtensor.setnewtensor(newshape)
 
 def make_communicate_group(warmup = True, **kwargs):
     world_size = kwargs["world_size"]
@@ -325,10 +314,9 @@ def make_communicate_group(warmup = True, **kwargs):
     subtasks = kwargs["subtasks"]
     node_rank = kwargs["node_rank"]
     world_rank = kwargs["world_rank"]
-
     reduce_job = _nnTo1n(subtasks, subtask_world_size)
     reduce_job.make_group()
-
+    
     subtask_gps = {} # 子任务层的通讯组
     for st_idx in range(world_size // subtask_world_size): # 一共有多少个
         subtask_gps[st_idx] = dist.new_group([st_idx * subtask_world_size + i for i in range(subtask_world_size)])
@@ -344,6 +332,8 @@ def make_communicate_group(warmup = True, **kwargs):
         del tensor_warm
 
         input_warm = torch.arange(subtask_world_size).to(device); output_warm = torch.empty([subtask_world_size], dtype=torch.int64).to(device)
+        # if int(os.environ["RANK"]) == 0:
+        
         dist.all_to_all_single(output_warm, input_warm, group = subtask_gps[subtask_idx])
         dist.all_to_all_single(output_warm, input_warm, group = node_gps[node_idx])
         del input_warm, output_warm
