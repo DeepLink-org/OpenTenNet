@@ -35,12 +35,42 @@ cd $OpenTenNet_PATH
 pip install submodule/python
 pip install submodule/cuda
 ```
-### 3. 4T TensorNetwork
+
+### 3. 640G TensorNetwork (Optional)
 #### 3.1 Uncompress
 ```
-unxz example.txt.xz
+unxz TensorNetwork/reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_10_open.pt.xz
 ```
 #### 3.2 Generate tensor network
+To grant execution permissions to the script `open_pre640G.sh` within the `TensorNetwork` directory, use the following command:
+```
+chmod +x TensorNetwork/open_pre640G.sh
+```
+The TensorNetwork/open_pre640G.sh looks like
+```
+export nodes_per_task=1
+export ntasks_per_node=8
+python TensorNetwork/open_pre640G.py
+```
+Here, `nodes_per_task` represents the number of nodes required for a multi-node level task, while `ntasks_per_node` denotes the number of GPUs per node. Please remember to adjust the values of `nodes_per_task` and `ntasks_per_node` according to the specific node configuration you intend to utilize.
+
+To initiate the tensor network generation process, execute the script with the command:
+```
+./TensorNetwork/open_pre640G.sh
+```
+
+#### 3.3 Excecution
+```
+chmod +x run_640G.sh
+./run_640G.sh
+```
+
+### 4. 4T TensorNetwork (Optional)
+#### 4.1 Uncompress
+```
+unxz TensorNetwork/sc38_reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_10_open.pt.xz
+```
+#### 4.2 Generate tensor network
 To grant execution permissions to the script `open_pre4T.sh` within the `TensorNetwork` directory, use the following command:
 ```
 chmod +x TensorNetwork/open_pre4T.sh
@@ -58,14 +88,14 @@ To initiate the tensor network generation process, execute the script with the c
 ./TensorNetwork/open_pre4T.sh
 ```
 
-#### 3.3 Excecution
+#### 4.3 Excecution
 ```
 chmod +x run_open_4T.sh
 ./run_open_4T.sh
 ```
 
-#### 3.4 Explanation of the bash script
-The "run_open_4T.sh" looks like
+## Explanation of the bash script
+The "run_xx.sh" looks like
 ```
 #### Default configuration ####
 export ntasks_per_node=8
