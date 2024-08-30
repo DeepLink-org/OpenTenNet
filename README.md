@@ -44,7 +44,7 @@ tar -zxvf 80G open9.pt.tar.gz 80G open9.pt
 ```
 cd $OpenTenNet_PATH
 chmod +x torchrun.sh
-/torchrun.sh
+./torchrun.sh
 ```
 ## Explanation of the bash script
 The "torchrun.sh" looks like
