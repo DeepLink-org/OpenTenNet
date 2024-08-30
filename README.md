@@ -35,43 +35,68 @@ cd $OpenTenNet_PATH
 pip install submodule/python
 pip install submodule/cuda
 ```
-### 3. Uncompress 80G open9.pt.tar.gz
+### 3. 4T TensorNetwork
+#### 3.1 Uncompress
 ```
-tar -zxvf 80G open9.pt.tar.gz 80G open9.pt
+unxz example.txt.xz
+```
+#### 3.2 Generate tensor network
+To grant execution permissions to the script `open_pre4T.sh` within the `TensorNetwork` directory, use the following command:
+```
+chmod +x TensorNetwork/open_pre4T.sh
+```
+The TensorNetwork/open_pre4T.sh looks like
+```
+export nodes_per_task=2
+export ntasks_per_node=8
+python TensorNetwork/open_pre4T.py
+```
+Here, `nodes_per_task` represents the number of nodes required for a multi-node level task, while `ntasks_per_node` denotes the number of GPUs per node. Please remember to adjust the values of `nodes_per_task` and `ntasks_per_node` according to the specific node configuration you intend to utilize.
+
+To initiate the tensor network generation process, execute the script with the command:
+```
+./TensorNetwork/open_pre4T.sh
 ```
 
-## Excecution
+#### 3.3 Excecution
 ```
-cd $OpenTenNet_PATH
-chmod +x torchrun.sh
-./torchrun.sh
+chmod +x run_open_4T.sh
+./run_open_4T.sh
 ```
-## Explanation of the bash script
-The "torchrun.sh" looks like
-```
-export time=
-export nodes_per_task=1
-export ntasks_per_node=1
 
-torchrun --nnodes=1 --nproc-per-node=${ntasks_per_node} \
-scripts/faketask.py \
---data_type 1 --ntask 8 --tensorNetSize faketask
+#### 3.4 Explanation of the bash script
+The "run_open_4T.sh" looks like
 ```
-Among all these parameters and variables, two particula arguments command our attention, data type, and ntasks per node:
+#### Default configuration ####
+export ntasks_per_node=8
+export time=$(date +%m-%d-%H_%M_%S)
 
-1.data type: This parameter indicates the computational data type to be used; if set to "0", the system will use complex half for computation, whereas assigning it value "1" will prompt computation of complex float.
-
-2. ntasks per node: It signifies how many GPUs are engaged within a node, enabling the scalability within a node. Feel free to toggle its settings from "1" to "2", "4" then "8".
-
-## Analysis
-The output looks like:
+export nnodes=2 # 全局需要多少个node
+export WORLD_SIZE=$((${nnodes}*${ntasks_per_node}))
+export nodes_per_task=2 # 做一个子任务需要多少个node
+srun -p {YOUR PARTITION} --quotatype=spot --cpus-per-task=8 \
+--nodes=${nnodes} --ntasks=$((${nnodes}*${ntasks_per_node})) \
+--ntasks-per-node=${ntasks_per_node} \
+--gres=gpu:${ntasks_per_node} \
+python scripts/2T/open_truetask.py \
+--job_select 0 --warmup 1 --data_type 0 --is_scale 1 --autotune 1 \
+--ntask 84  --tensorNetSize 2T --typeCom int4kernel
 ```
-=====================================================
-===================== RESULT ========================
-Profile saved to prof_dir/faketask/CALcomplexFloat_COMcomplex32_TUNE1/Nodes0//ntask7_CALcomplexFloat_COMcomplex32_TUNE1_Nodes0.json
-Truetask used 14.522 s
-torch.memory.allocated 9.765924453735352 G, torch.memory.reserved 19.091796875 G
-energy information saved to prof_dir/faketask/CALcomplexFloat_COMcomplex32_TUNE1/Nodes0//energy/
-total consumption 0.0010177632230456961 kwh
-```
-After the execution, you will find the time-to-solution, a profile path, energy consumption, and the energy log in the output. To assess the time taken by computation and communication, you can visit https://pytorch.org/docs/stable/profiler.html and load the profile json file. If you want to analyze detailed energy information instead of just the total consumption, you can delve into the energy log.
+
+The parameters associated with the three-level parallel scheme in the bash script are recognized as follows:
+
+- `nnodes`: The total number of nodes used globally. This corresponds to the global level of our three-level scheme, and this value must be an integer multiple of `nodes per task`.
+- `nodes per task`: The number of nodes required for a multi-node level task. It must be consistent with the `nodes per task` parameter in the preprocessing file (see Table I).
+- `WORLD_SIZE`: The total number of GPUs required globally, corresponding to the device level of the three-level scheme.
+
+The primary function is crafted using the Python language. It accommodates multiple arguments that enable the specification of the techniques to be employed. Below is an explanation and basic usage of our parameters:
+
+- `warmup`: Whether the GPU warms up before the official operation. `0` represents no warm-up, and `1` represents warm-up.
+- `data_type`: The calculation mode used in this process is detailed in Table I.
+- `is_scale`: Calculate the scaling factor for the `complex32` calculation mode, with a default value of `1`.
+- `autotune`: Tuning for the best algorithms for `einsum` calculation, with a default value of `1`.
+- `ntask`: We execute the number of multi-node level tasks, where the number of global-level tasks is equal to `ntask` × (`nnodes` / `nodes per task`).
+- `tensorNetSize`: The scale of tensor networks.
+- `typeCom`: The parameter selection for inter-node data quantization communication is detailed in the table below.
+
+
