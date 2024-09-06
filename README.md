@@ -37,7 +37,7 @@ pip install submodule/cuda
 ```
 
 ### 3. 640G TensorNetwork (Optional)
-#### 3.1 Uncompress
+#### 3.1 Uncompress tensor network configuration
 ```
 unxz TensorNetwork/reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_10_open.pt.xz
 ```
@@ -46,13 +46,20 @@ To grant execution permissions to the script `open_pre640G.sh` within the `Tenso
 ```
 chmod +x TensorNetwork/open_pre640G.sh
 ```
-The TensorNetwork/open_pre640G.sh looks like
-```
-export nodes_per_task=1
-export ntasks_per_node=8
-python TensorNetwork/open_pre640G.py
-```
-Here, `nodes_per_task` represents the number of nodes required for a multi-node level task, while `ntasks_per_node` denotes the number of GPUs per node. Please remember to adjust the values of `nodes_per_task` and `ntasks_per_node` according to the specific node configuration you intend to utilize.
+
+<details>
+<summary><span style="font-weight: bold;"> Explanation of open_pre640G.sh <span></summary>
+
+  The bash script looks like:
+  ```
+  export nodes_per_task=1
+  export ntasks_per_node=8
+  
+  python TensorNetwork/open_pre640G.py
+  ```
+  Here, `nodes_per_task` represents the number of nodes required for a multi-node level task, while `ntasks_per_node` denotes the number of GPUs per node. Please remember to adjust the values of `nodes_per_task` and `ntasks_per_node` according to the specific node configuration you intend to utilize.
+</details>
+<br>
 
 To initiate the tensor network generation process, execute the script with the command:
 ```
@@ -64,69 +71,126 @@ To initiate the tensor network generation process, execute the script with the c
 chmod +x run_640G.sh
 ./run_640G.sh
 ```
+<details>
+<summary><span style="font-weight: bold;">Command Line Arguments for "run_640G"</span></summary>
+  
+  #### nnodes
+  The total number of nodes used globally. This corresponds to the global level of our three-level scheme, and this value must be an integer multiple of ```nodes_per_task```.
+  
+  #### nodes_per_task
+  The number of nodes required for a multi-node level task.
+  
+  #### WORLD_SIZE
+  The total number of GPUs required globally, corresponds to the device level of the three-level scheme.
+  
+  #### --warmup
+  Whether the GPU warms up before the official operation. ```0``` represents no warm-up, and ```1``` represents warm-up.
+  #### --data_type
+  The calculation type. ```0``` represents complexHalf, ```1``` represent complexFloat.
+  
+  #### --is_scale
+  Calculate the scaling factor for the `complex32` calculation mode, with a default value of `1`.
+  
+  #### --autotune
+  Tuning for the best algorithms for einsum calculation, with a default value of `1`.
+  #### --ntask
+  We execute the number of multi-node level tasks, where the number of global-level tasks is equal to ```ntask``` * (```nnodes``` / ```nodes per task```).
+  #### --tensorNetSize
+  The size of tensor networks.
+  #### --typeCom
+  Data type for communication.  If provided ```int4kernel```, ```int8kernel```, ```HalfKernel```, uses user-defined int4, int8 and half for communication, respectively.
+
+  #### --groupsize
+  Group size when typeCom equals int4kernel. ```128``` by default.
+  
+</details>
+<br>
 
 ### 4. 4T TensorNetwork (Optional)
-#### 4.1 Uncompress
+#### 4.1 Uncompress tensor network configuration
 ```
-unxz TensorNetwork/sc38_reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_10_open.pt.xz
+unxz TensorNetwork/4T/sc38_reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_10_open.pt.xz
 ```
 #### 4.2 Generate tensor network
-To grant execution permissions to the script `open_pre4T.sh` within the `TensorNetwork` directory, use the following command:
+To grant execution permissions to the script `open_pre4T_xxx.sh` within the `TensorNetwork` directory, use the following command:
 ```
-chmod +x TensorNetwork/open_pre4T.sh
+# without recomputation
+chmod +x TensorNetwork/4T/open_pre4T.sh
+
+# with recomputation (only support when GPU memory > 80 GB, tested on A100)
+chmod +x TensorNetwork/4T/open_pre4T_recal.sh
 ```
-The TensorNetwork/open_pre4T.sh looks like
-```
-export nodes_per_task=2
-export ntasks_per_node=8
-python TensorNetwork/open_pre4T.py
-```
-Here, `nodes_per_task` represents the number of nodes required for a multi-node level task, while `ntasks_per_node` denotes the number of GPUs per node. Please remember to adjust the values of `nodes_per_task` and `ntasks_per_node` according to the specific node configuration you intend to utilize.
+
+<details>
+<summary><span style="font-weight: bold;"> Explanation of open_pre4T_xxx.sh <span></summary>
+
+  The bash script looks like:
+  ```
+  export nodes_per_task=4
+  export ntasks_per_node=8
+  python TensorNetwork/open_pre4T.py
+  ```
+  Here, `nodes_per_task` represents the number of nodes required for a multi-node level task, while `ntasks_per_node` denotes the number of GPUs per node. Please remember to adjust the values of `nodes_per_task` and `ntasks_per_node` according to the specific node configuration you intend to utilize.
+</details>
+<br>
 
 To initiate the tensor network generation process, execute the script with the command:
 ```
-./TensorNetwork/open_pre4T.sh
+# without recomputation
+./TensorNetwork/4T/open_pre4T.sh
+
+# with recomputation (only support when GPU memory > 80 GB, tested on A100)
+./TensorNetwork/4T/open_pre4T_recal.sh
 ```
 
 #### 4.3 Excecution
 ```
+# without recomputation
 chmod +x run_open_4T.sh
 ./run_open_4T.sh
+
+# with recomputation (only support when GPU memory > 80 GB, tested on A100)
+chmod +x run_open_4T_recal.sh
+./run_open_4T_recal.sh
 ```
+<details>
+<summary><span style="font-weight: bold;">Command Line Arguments for run_open_4T_xx.sh </span></summary>
+  
+  #### nnodes
+  The total number of nodes used globally. This corresponds to the global level of our three-level scheme, and this value must be an integer multiple of ```nodes_per_task```.
+  
+  #### nodes_per_task
+  The number of nodes required for a multi-node level task.
+  
+  #### WORLD_SIZE
+  The total number of GPUs required globally, corresponds to the device level of the three-level scheme.
+  
+  #### --warmup
+  Whether the GPU warms up before the official operation. ```0``` represents no warm-up, and ```1``` represents warm-up.
+  #### --data_type
+  The calculation type. ```0``` represents complexHalf, ```1``` represent complexFloat.
+  
+  #### --is_scale
+  Calculate the scaling factor for the `complex32` calculation mode, with a default value of `1`.
+  
+  #### --autotune
+  Tuning for the best algorithms for einsum calculation, with a default value of `1`.
+  #### --ntask
+  We execute the number of multi-node level tasks, where the number of global-level tasks is equal to ```ntask``` * (```nnodes``` / ```nodes per task```).
+  #### --tensorNetSize
+  The size of tensor networks.
+  #### --typeCom
+  Data type for communication.  If provided ```int4kernel```, ```int8kernel```, ```HalfKernel```, uses user-defined int4, int8 and half for communication, respectively.
 
-## Explanation of the bash script
-The "run_xx.sh" looks like
-```
-#### Default configuration ####
-export ntasks_per_node=8
-export time=$(date +%m-%d-%H_%M_%S)
+  #### --groupsize
+  Group size when typeCom equals int4kernel. ```128``` by default.
+  
+</details>
+<br>
 
-export nnodes=2 # 全局需要多少个node
-export WORLD_SIZE=$((${nnodes}*${ntasks_per_node}))
-export nodes_per_task=2 # 做一个子任务需要多少个node
-srun -p {YOUR PARTITION} --quotatype=spot --cpus-per-task=8 \
---nodes=${nnodes} --ntasks=$((${nnodes}*${ntasks_per_node})) \
---ntasks-per-node=${ntasks_per_node} \
---gres=gpu:${ntasks_per_node} \
-python scripts/2T/open_truetask.py \
---job_select 0 --warmup 1 --data_type 0 --is_scale 1 --autotune 1 \
---ntask 84  --tensorNetSize 2T --typeCom int4kernel
-```
 
-The parameters associated with the three-level parallel scheme in the bash script are recognized as follows:
 
-- `nnodes`: The total number of nodes used globally. This corresponds to the global level of our three-level scheme, and this value must be an integer multiple of `nodes per task`.
-- `nodes per task`: The number of nodes required for a multi-node level task. It must be consistent with the `nodes per task` parameter in the preprocessing file (see Table I).
-- `WORLD_SIZE`: The total number of GPUs required globally, corresponding to the device level of the three-level scheme.
+  
 
-The primary function is crafted using the Python language. It accommodates multiple arguments that enable the specification of the techniques to be employed. Below is an explanation and basic usage of our parameters:
-
-- `warmup`: Whether the GPU warms up before the official operation. `0` represents no warm-up, and `1` represents warm-up.
-- `data_type`: The calculation mode used in this process is detailed in Table I.
-- `is_scale`: Calculate the scaling factor for the `complex32` calculation mode, with a default value of `1`.
-- `autotune`: Tuning for the best algorithms for `einsum` calculation, with a default value of `1`.
-- `ntask`: We execute the number of multi-node level tasks, where the number of global-level tasks is equal to `ntask` × (`nnodes` / `nodes per task`).
-- `tensorNetSize`: The scale of tensor networks.
-- `typeCom`: The parameter selection for inter-node data quantization communication is detailed in the table below.
 
 
