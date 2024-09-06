@@ -3,9 +3,10 @@ import torch
 import string
 import re
 import numpy as np
+import os
 
 # %%
-scheme = torch.load('TensorNetwork/sc38_reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_10_open.pt')
+scheme = torch.load('TensorNetwork/4T/sc38_reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_10_open.pt')
 
 # %%
 nsch = []
@@ -131,7 +132,7 @@ nsch[341]
 
 # %%
 from math import  log
-import os
+
 nodes_per_task = int(os.environ["nodes_per_task"]) # 做一个子任务需要多少个node
 gpus_per_task = int(os.environ["ntasks_per_node"])
 mnmodes = int(log(nodes_per_task, 2)) # modes for multi nodes for all-to-all single
@@ -161,7 +162,6 @@ for i in range(47,356,1):
     # print(np.sort(modelife)[-mgmodes:], modelife)
 
 # %%
-
 # 节点间和节点内分开方案
 out_selmode = None
 lastorder = None
@@ -171,16 +171,9 @@ for nstep in range(355,46,-1):
     ein_old = re.split('->|,', nsch[nstep]['ein_2'])
     ein_new = re.split('->|,', nsch[nstep]['ein_2'])
     stepmodelife = torch.tensor(logmodelife[nstep])
+    # print(f"input size {4*2**(len(ein_new[0])-30-mgmodes)}G, output size {4*2**(len(ein_new[2])-30-mgmodes)}G")
     if prestep[nstep]!=None:
-        prestepmodelife = torch.tensor(logmodelife[prestep[nstep]]) 
-    
-    internode = 0
-    try:
-        if stepmodelife[out_selmode[:mnmodes]].min() <= 1:
-            internode = 1
-    except:
-        pass
-
+        prestepmodelife = torch.tensor(logmodelife[prestep[nstep]])  
     if out_selmode == None:      # 起始
         outmgchar = [ein_old[2][i] for i in range(mgmodes)]
         in_selmode = [ein_old[0].find(c) for c in outmgchar]
@@ -196,7 +189,7 @@ for nstep in range(355,46,-1):
         ein_new[2] = np.array(list(ein_new[2]))[lastorder]        
         ein_new[2] = "".join(ein_new[2].tolist())
         
-    elif stepmodelife[out_selmode].min() > 1: #不需要重排
+    elif stepmodelife[out_selmode].min() > 1 and nstep != 156: #不需要重排
         mgchar = [ein_old[2][i] for i in out_selmode]
         in_selmode = [ein_old[0].find(c) for c in mgchar]
 
@@ -207,14 +200,14 @@ for nstep in range(355,46,-1):
         ein_new[0] = np.array(list(ein_new[0]))[new_order]     
         ein_new[0] = "".join(ein_new[0].tolist())
         
-    elif internode: # 节点间all2all
+    elif (stepmodelife[out_selmode[:mnmodes]].min() <= 1) or nstep==156: # 节点间all2all
         outmgchar = [ein_old[2][i] for i in out_selmode]
         in_selmode_out = [ein_old[0].find(c) for c in outmgchar]
         for x in in_selmode_out:
             prestepmodelife[x] = 0 
         in_selmode = prestepmodelife.argsort(descending=True,stable=True)[:mgmodes]
         in_selmode = in_selmode.tolist()
-        # print(f"out_selmode {out_selmode}, in_selmode_out {in_selmode_out}, in_selmode {in_selmode}")
+        # # print(f"out_selmode {out_selmode}, in_selmode_out {in_selmode_out}, in_selmode {in_selmode}")
         assert len(set(in_selmode_out) &set(in_selmode)) == 0
         
         ein_new[2] = np.array(list(ein_new[2]))[lastorder]        
@@ -236,12 +229,12 @@ for nstep in range(355,46,-1):
             prestepmodelife[x] = 0 
         # TODO: modify here
         in_selmode = prestepmodelife.argsort(descending=True,stable=True).tolist()
-        # print(f"before: in_selmode {in_selmode}")
+        # # print(f"before: in_selmode {in_selmode}")
         for mode in in_selmode_out_mn:
             in_selmode.remove(mode)
         
         in_selmode = in_selmode_out_mn + in_selmode[:(mgmodes-mnmodes)]
-        # print(f"after: in_selmode_out_mn {in_selmode_out_mn}, in_selmode {in_selmode}")
+        # # print(f"after: in_selmode_out_mn {in_selmode_out_mn}, in_selmode {in_selmode}")
         # # print((in_selmode_out), (in_selmode))
         assert len(set(in_selmode_out_mg) &set(in_selmode)) == 0
         
@@ -263,14 +256,5 @@ for nstep in range(355,46,-1):
     nsch[nstep]['reorder_ein'] = f"{ein_new[0]},{ein_new[1]}->{ein_new[2]}"
     out_selmode = in_selmode
     lastorder = new_order
-        
-        
-
-# %%
-torch.save(nsch,f'open_sc38_nsch_split{split}_mg{mgmodes}_splitmn.pt')
-# %%
-
-torch.save(nsch,f'TensorNetwork/open_sc38_nsch_split{split}_mg{mgmodes}_splitmn.pt')
-
-
+torch.save(nsch,f'TensorNetwork/4T/open_sc38_nsch_split{split}_mg{mgmodes}_splitmn_SelectStep.pt')
 
