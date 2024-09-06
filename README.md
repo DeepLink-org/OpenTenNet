@@ -109,16 +109,23 @@ chmod +x run_640G.sh
 ### 4. 4T TensorNetwork (Optional)
 #### 4.1 Uncompress tensor network configuration
 ```
+# with post-process
 unxz TensorNetwork/4T/sc38_reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_10_open.pt.xz
+
+# without post-process
+unxz TensorNetwork/4T/sc38_scheme_n53_m20_2057.pt.xz
 ```
 #### 4.2 Generate tensor network
 To grant execution permissions to the script `open_pre4T_xxx.sh` within the `TensorNetwork` directory, use the following command:
 ```
-# without recomputation
+# post-process without recomputation
 chmod +x TensorNetwork/4T/open_pre4T.sh
 
-# with recomputation (only support when GPU memory > 80 GB, tested on A100)
+# post-process, with recomputation (only support when GPU memory > 80 GB, tested on A100)
 chmod +x TensorNetwork/4T/open_pre4T_recal.sh
+
+# no post-process, no recomputation
+chmod +x TensorNetwork/4T/pre4T.sh
 ```
 
 <details>
@@ -141,6 +148,9 @@ To initiate the tensor network generation process, execute the script with the c
 
 # with recomputation (only support when GPU memory > 80 GB, tested on A100)
 ./TensorNetwork/4T/open_pre4T_recal.sh
+
+# no post-process, no recomputation
+./TensorNetwork/4T/pre4T.sh
 ```
 
 #### 4.3 Excecution
@@ -152,6 +162,10 @@ chmod +x run_open_4T.sh
 # with recomputation (only support when GPU memory > 80 GB, tested on A100)
 chmod +x run_open_4T_recal.sh
 ./run_open_4T_recal.sh
+
+# no post-process, no recomputation
+chmod +x run_4T.sh
+./run_4T.sh
 ```
 <details>
 <summary><span style="font-weight: bold;">Command Line Arguments for run_open_4T_xx.sh </span></summary>
