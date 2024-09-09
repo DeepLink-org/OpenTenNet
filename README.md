@@ -126,6 +126,9 @@ chmod +x TensorNetwork/4T/open_pre4T_recal.sh
 
 # no post-process, no recomputation
 chmod +x TensorNetwork/4T/pre4T.sh
+
+# no post-process, with recomputation (only support when GPU memory > 80 GB, tested on A100)
+chmod +x TensorNetwork/4T/pre4T_recal.sh
 ```
 
 <details>
@@ -151,6 +154,9 @@ To initiate the tensor network generation process, execute the script with the c
 
 # no post-process, no recomputation
 ./TensorNetwork/4T/pre4T.sh
+
+# no post-process, with recomputation (only support when GPU memory > 80 GB, tested on A100)
+./TensorNetwork/4T/pre4T_recal.sh
 ```
 
 #### 4.3 Excecution
@@ -166,6 +172,10 @@ chmod +x run_open_4T_recal.sh
 # no post-process, no recomputation
 chmod +x run_4T.sh
 ./run_4T.sh
+
+# no post-process, with recomputation (only support when GPU memory > 80 GB, tested on A100)
+chmod +x run_4T_recal.sh
+./run_4T_recal.sh
 ```
 <details>
 <summary><span style="font-weight: bold;">Command Line Arguments for run_open_4T_xx.sh </span></summary>
