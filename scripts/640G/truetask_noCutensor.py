@@ -82,7 +82,7 @@ if args.data_type == 0:
     # cutensor 不支持 complex32，需要一个tensor储存扩充后的小tensor
     # kwargs["buffer_tensors"] = torch.zeros(2**27, dtype = torch.complex32, device = device)
     tensors_gpu = [tensor.to(device, dtype=torch.complex32) for tensor in tensors]
-    stemtensor = [torch.empty([2**32], dtype = torch.complex32, device = device), torch.empty([2**32], dtype = torch.complex32, device = device)]
+    stemtensor = [None, None]
 elif args.data_type == 1:
     kwargs["dtype_"] = "complex64"
     tensors_gpu = [tensor.to(device, dtype=torch.complex64) for tensor in tensors]
@@ -94,39 +94,22 @@ if world_rank == 0:
 
 ###################################################################################################################
 class MgTensor:  
-    @property
-    def curtensor(self):
-        nelem = torch.tensor(self.shape).prod().item()
-        return self.stemtensor[self.pcurtensor][:nelem].view(self.shape)
-    
-    @property
-    def nexttensor(self):
-        ptr = 1 - self.pcurtensor
-        return self.stemtensor[ptr]
-    
-    def setnewtensor(self,newshape):
-        self.pcurtensor = 1 - self.pcurtensor
-        self.shape = newshape
-        global stemPtr
-        stemPtr = 1 - stemPtr
-    
-    def __init__(self, stemtensor, sgtensor, mgmodes, convert = False):
+    def __init__(self, sgtensor, mgmodes, convert = False):
         self.pcurtensor = 0
         self.node_rank = node_rank
         self.node_world_size = node_world_size
         self.subtask_rank = subtask_rank
         self.subtask_world_size = subtask_world_size
-        self.stemtensor = stemtensor
         
         assert type(sgtensor) == torch.Tensor
         if convert:
             self.shape = sgtensor.shape
-            self.curtensor[:] = sgtensor
+            self.curtensor = sgtensor
         else:
             sgtensor = sgtensor.flatten(end_dim = mgmodes)
             sgtensor = torch.chunk(sgtensor, 2**mgmodes)[self.subtask_rank]
             self.shape = sgtensor.shape
-            self.curtensor[:] = sgtensor
+            self.curtensor = sgtensor
     
     def einsum(self, nstep, ein, insg2, task_id, mnmodes, mgmodes, **kwargs):
         typeCom = kwargs["typeCom"]
@@ -153,18 +136,20 @@ class MgTensor:
                     print(f"group size {groupsize}", flush=True)
                 int_com.int4_communicate(task_id, nstep, self, group, groupsize, **kwargs)
             else:
+                self.shape = self.curtensor.shape
                 rawtensor = self.curtensor.flatten(end_dim = mgmodes-1)
-                newmgtensor = self.nexttensor
+                newmgtensor = torch.empty_like(rawtensor)
                 dist.all_to_all_single(newmgtensor, rawtensor, group = group)
-                self.setnewtensor(self.shape)
+                self.curtensor = newmgtensor.view(self.shape)
+
         elif ein_list[0][mnmodes:mgmodes] != ein_list[2][mnmodes:mgmodes]:
             # if world_rank == 0:
             #     print(f"nstep {nstep}，节点内 ein {ein}", flush = True)
             group = node_gps[node_idx]
             rawtensor = self.curtensor.flatten(end_dim = mgmodes-mnmodes-1)
-            newmgtensor = self.nexttensor
+            newmgtensor = torch.empty_like(rawtensor)
             dist.all_to_all_single(newmgtensor, rawtensor, group = group)
-            self.setnewtensor(self.shape)
+            self.curtensor = newmgtensor.view(self.shape)
         # if world_rank == 0:
         #     print(f"nstep {nstep}, mgmodes {mgmodes}, ein {ein}, ein_new {ein_new}", flush = True)
         EinsumGeneralV2_choose_method(nstep, self, ein_new, insg2, **kwargs)
@@ -172,6 +157,8 @@ class MgTensor:
     def flatsplit(self, flat, split, chunks = split // subtask_world_size, mgmodes = mgmodes):
         # Here I assumed that the tensors won't be larger than the splited tensor
         # It may won't work in other tensor network
+        torch.cuda.empty_cache()
+        self.nexttensor = torch.empty_like(self.curtensor)
         mgtensorsplit = utils.MgTensorSplit(self.curtensor, self.nexttensor.flatten(), flat, chunks, mgmodes)
         return mgtensorsplit
 
@@ -186,21 +173,15 @@ def EinsumGeneralV2_choose_method(nstep, mgtensor, ein, tensor_j, **kwargs):
     ein_0, ein_1, _ = utils.remove_common_suffixes(ein_list[0], ein_list[1])
     ein_mm = ein_list[0] + "," + ein_list[1] + "->" + ein_0 + ein_1
     ein_permute = ein_0 + ein_1 + "->" + ein_list[2]   
+    # torch.cuda.empty_cache()
+    mgtensor.curtensor = utils.torch_einsum(ein, mgtensor.curtensor, tensor_j, **kwargs)
 
-    temp = utils.torch_einsum(ein, mgtensor.curtensor, tensor_j, **kwargs)
-
-    newshape = temp.shape
-    
-    # output = torch.empty(newshape, dtype = torch.complex32, device = device)
-    # # EinsumGeneralV2(output, ein, mgtensor.curtensor, tensor_j, **kwargs)
-    # torch.view_as_real(output-temp).max()
-    # torch.view_as_real(temp-0).mean()
-    mgtensor.nexttensor[:temp.numel()].copy_(temp.view(-1))
-    mgtensor.setnewtensor(newshape)
 
 
 def cont_nsch_split(tensors, nsch, task_id, **kwargs):
     for nstep, step in enumerate(nsch):
+        # if world_rank == 0:
+        #     print(f"nstep {nstep}", flush = True)
         with record_function(f"step{nstep}"):
             i, j = step['index']
 
@@ -247,7 +228,7 @@ def cont_nsch_split(tensors, nsch, task_id, **kwargs):
                 elif 'reorder_ein' in step:
                     if type(tensors[i]) == torch.Tensor:
                         tensors[i] = utils.torch_einsum(step['reorder_ein'], tensors[i], tensors[j], **kwargs)
-                        tensors[i] = MgTensor(stemtensor, tensors[i], mgmodes)
+                        tensors[i] = MgTensor(tensors[i], mgmodes)
                     else:
                         assert type(tensors[i]) == MgTensor
                         tensors[i].einsum(nstep, step['reorder_ein'], tensors[j], task_id, args.use_int8, **kwargs)
