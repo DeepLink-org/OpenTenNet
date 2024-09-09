@@ -5,24 +5,14 @@ import re
 import numpy as np
 
 # %%
-scheme = torch.load('TensorNetwork/640G/reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_10_open.pt')
-
-# %%
-idx, ein, [bi, bj] = scheme[1][356][:3]
-restletters = "".join(list((set(string.ascii_letters) - set(ein))))
-ein_old = re.split('->|,', ein)
-ein_new = ein_old[0].replace(ein_old[0][0], restletters[0]) + ',' +\
-            ein_old[1].replace(ein_old[1][0], restletters[1]) + '->' +\
-            ein_old[2].replace(ein_old[2][0], restletters[:2])
-bnew = [torch.cat(bi)*16 + torch.cat(bj)]
-scheme[1][356] = (idx, ein_new, [bnew,[]], None, None)
+scheme = torch.load('TensorNetwork/4T/sc38_scheme_n53_m20_2057.pt')
 
 # %%
 nsch = []
 flat = [1] * 455
 laten = -1
 lasplit = -1
-split = 512
+split = 512*16
 for num,step in enumerate(scheme[1]):
     nstep = {}
     
@@ -48,21 +38,21 @@ for num,step in enumerate(scheme[1]):
         blen = len(bi)
         if i == laten:
             laten = -1
-            # print('1 st')
+            # # print('1 st')
             # for index in range(blen):
             #     bi[index] = labatch[bi[index]]
             bi = labatch[bi]
         
         nstep['type'] = 1
         nstep['flat'] = (flat[i], flat[j])
-        # print(num,' ',i,' ',j,' ',nstep['flat'])
+        # # print(num,' ',i,' ',j,' ',nstep['flat'])
         nstep['ein'] = step[1]
         if lasplit == -1:
             lasplit = i
             chubi_begin = list(range(0, bi[-1],  int(np.ceil(bi[-1]/split))))
             assert len(chubi_begin) == split, len(chubi_begin)
         assert lasplit == i
-        # print(chubi_begin)
+        # # print(chubi_begin)
         chubi = []
         chubj = []
         begin = 0
@@ -72,7 +62,7 @@ for num,step in enumerate(scheme[1]):
             valuemin = chubi_begin[index]
             valuemax = chubi_begin[index+1]
             end = torch.searchsorted(bi, valuemax)
-            # print(begin,end, begin-end,bi[begin:end]-valuemin)
+            # # print(begin,end, begin-end,bi[begin:end]-valuemin)
             chubi.append(bi[begin:end]-valuemin)
             chubj.append(bj[begin:end])
             begin = end
@@ -84,7 +74,7 @@ for num,step in enumerate(scheme[1]):
         flat[i] = 1
     elif len(step)>3:
         nstep['flat'] = (flat[i], flat[j])
-        # print(num,' ',i,' ',j,' ',nstep['flat'])
+        # # print(num,' ',i,' ',j,' ',nstep['flat'])
         flat[i] = flat[i] + flat[j]
         nstep['type'] = 2
         if len(batch_i) == 1:
@@ -92,7 +82,7 @@ for num,step in enumerate(scheme[1]):
             labatch = batch_i[0]
     else:
         nstep['flat'] = (flat[i], flat[j])
-        # print(num,' ',i,' ',j,' ',nstep['flat'])
+        # # print(num,' ',i,' ',j,' ',nstep['flat'])
         assert flat[i] == 1 or flat[j] == 1
         if flat[i] > 1:
             assert ein_old[2][0] == ein_old[0][0]
@@ -104,7 +94,7 @@ for num,step in enumerate(scheme[1]):
     nsch.append(nstep)
 
 # %%
-stemindex = 27
+stemindex = 66
 permute = {stemindex:np.arange(len(nsch[-1]['ein'].split('->')[1])).tolist()}
 for nstep in range(len(nsch)-1,-1,-1):
     i, j = nsch[nstep]['index']
@@ -137,18 +127,21 @@ for nstep in range(len(nsch)-1,-1,-1):
     # print(nsch[nstep]['ein_2'])
 
 # %%
+nsch[341]
+
+# %%
 from math import  log
 import os
+
 nodes_per_task = int(os.environ["nodes_per_task"]) # 做一个子任务需要多少个node
 gpus_per_task = int(os.environ["ntasks_per_node"])
 mnmodes = int(log(nodes_per_task, 2)) # modes for multi nodes for all-to-all single
 mgmodes = mnmodes+int(log(gpus_per_task, 2))# modes for multi gpus, 3 是每个节点有2^3个gpu
-
 logmodelife = {}
 prestep = {}
 lastmodelife = []
 tmp = None
-for i in range(54,357,1):
+for i in range(47,356,1):
     if stemindex not in nsch[i]['index']:
         continue
     ein = re.split('->|,', nsch[i]['ein_2'])
@@ -166,32 +159,27 @@ for i in range(54,357,1):
     logmodelife[i] = modelife
     prestep[i] = tmp
     tmp = i
-    # print(np.sort(modelife)[-3:], modelife)
+    # print(np.sort(modelife)[-mgmodes:], modelife)
 
 # %%
-
+# 节点间和节点内分开方案
+inter_data = 0
+intra_data = 0
 out_selmode = None
 lastorder = None
-for nstep in range(356,53,-1):
+for nstep in range(355,46,-1):
     if nstep not in logmodelife.keys():
         continue
     ein_old = re.split('->|,', nsch[nstep]['ein_2'])
     ein_new = re.split('->|,', nsch[nstep]['ein_2'])
     stepmodelife = torch.tensor(logmodelife[nstep])
+    # print(f"input size {4*2**(len(ein_new[0])-30-mgmodes)}G, output size {4*2**(len(ein_new[2])-30-mgmodes)}G")
     if prestep[nstep]!=None:
-        prestepmodelife = torch.tensor(logmodelife[prestep[nstep]]) 
-    
-    internode = 0
-    try:
-        if stepmodelife[out_selmode[:mnmodes]].min() <= 1:
-            internode = 1
-    except:
-        pass
-
+        prestepmodelife = torch.tensor(logmodelife[prestep[nstep]])  
     if out_selmode == None:      # 起始
         outmgchar = [ein_old[2][i] for i in range(mgmodes)]
         in_selmode = [ein_old[0].find(c) for c in outmgchar]
-        # # print(in_selmode)
+        # print(in_selmode)
         in_selmode_out = sorted(in_selmode)
         
         new_order = in_selmode + [i for i in range(len(ein_old[0])) if i not in in_selmode]
@@ -203,7 +191,7 @@ for nstep in range(356,53,-1):
         ein_new[2] = np.array(list(ein_new[2]))[lastorder]        
         ein_new[2] = "".join(ein_new[2].tolist())
         
-    elif stepmodelife[out_selmode].min() > 1: #不需要重排
+    elif stepmodelife[out_selmode].min() > 1 and nstep != 156: #不需要重排
         mgchar = [ein_old[2][i] for i in out_selmode]
         in_selmode = [ein_old[0].find(c) for c in mgchar]
 
@@ -214,7 +202,7 @@ for nstep in range(356,53,-1):
         ein_new[0] = np.array(list(ein_new[0]))[new_order]     
         ein_new[0] = "".join(ein_new[0].tolist())
         
-    elif internode: # 节点间all2all
+    elif (stepmodelife[out_selmode[:mnmodes]].min() <= 1) or nstep==156: # 节点间all2all
         outmgchar = [ein_old[2][i] for i in out_selmode]
         in_selmode_out = [ein_old[0].find(c) for c in outmgchar]
         for x in in_selmode_out:
@@ -231,7 +219,8 @@ for nstep in range(356,53,-1):
                     [i for i in range(len(prestepmodelife)) if i not in (in_selmode + in_selmode_out)]
         ein_new[0] = np.array(list(ein_new[0]))[new_order]     
         ein_new[0] = "".join(ein_new[0].tolist())
-        # # print(f"节点间all2all, input size {4*2**(len(ein_new[0])-35)}G, output size {4*2**(len(ein_new[2])-35)}G")
+        # print(f"节点间all2all")
+        inter_data += 4*2**(len(ein_new[0])-30-mgmodes)
 
     else: # 节点内all2all
         outmgchar_mn = [ein_old[2][i] for i in out_selmode[:mnmodes]]
@@ -249,7 +238,7 @@ for nstep in range(356,53,-1):
         
         in_selmode = in_selmode_out_mn + in_selmode[:(mgmodes-mnmodes)]
         # # print(f"after: in_selmode_out_mn {in_selmode_out_mn}, in_selmode {in_selmode}")
-        # # # print((in_selmode_out), (in_selmode))
+        # # print((in_selmode_out), (in_selmode))
         assert len(set(in_selmode_out_mg) &set(in_selmode)) == 0
         
         ein_new[2] = np.array(list(ein_new[2]))[lastorder]        
@@ -259,19 +248,26 @@ for nstep in range(356,53,-1):
                     [i for i in range(len(prestepmodelife)) if i not in (in_selmode + in_selmode_out_mg)]
         ein_new[0] = np.array(list(ein_new[0]))[new_order]     
         ein_new[0] = "".join(ein_new[0].tolist())
+        # print("节点内all2all")
+        intra_data += 4*2**(len(ein_new[0])-30-mgmodes)
+
         
         
     # print(nstep,stepmodelife[out_selmode], nsch[nstep]['flat'], nsch[nstep]['type'])
-    # print(f"{ein_new[0]},{ein_new[1]}->{ein_new[2]}")
-    # print(f"{ein_old[0]},{ein_old[1]}->{ein_old[2]}")
+    # print(f"ein_new {ein_new[0]},{ein_new[1]}->{ein_new[2]}")
+    # print(f"ein_old {ein_old[0]},{ein_old[1]}->{ein_old[2]}")
+    # print("\n")
     nsch[nstep]['reorder_ein'] = f"{ein_new[0]},{ein_new[1]}->{ein_new[2]}"
     out_selmode = in_selmode
     lastorder = new_order
-        
+# print(f"inter data {inter_data}G (half), intra data {intra_data}G (half)")
         
 
 # %%
 import torch
-torch.save(nsch,f'TensorNetwork/640G/640G_rep_nsch640_split{split}_mg{mgmodes}_splitmn.pt')
+torch.save(nsch,f'TensorNetwork/4T/sc38_nsch_split{split}_mg{mgmodes}_splitmn_SelectStep.pt')
+# print(f"file saved to sc38_nsch_split{split}_mg{mgmodes}_splitmn_SelectStep.pt")
+
+
 
 

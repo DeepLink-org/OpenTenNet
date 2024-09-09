@@ -70,8 +70,8 @@ kwargs["subtask_gps"] = subtask_gps
 kwargs["node_gps"] = node_gps
 ##################################################################################################################
 ############# SETTING UP FOR TENSOR CREATION #################################################################
-cont_file = 'TensorNetwork/sc38_scheme_n53_m20_2057.pt'
-nsch = torch.load(f'TensorNetwork/sc38_nsch_split{split}_mg{mgmodes}_splitmn.pt')
+cont_file = 'TensorNetwork/4T/sc38_scheme_n53_m20_2057.pt'
+nsch = torch.load(f'TensorNetwork/4T/sc38_nsch_split{split}_mg{mgmodes}_splitmn.pt')
 # nsch = torch.load(f'TensorNetwork/sc38_nsch_split{split}_mg{mgmodes}.pt')
 tensors, scheme, slicing_indices, bitstrings = torch.load(cont_file)[:4]
 nsch =  utils.prepare_nsch(nsch, split, device)
@@ -310,51 +310,66 @@ time_end = time.time()
 if world_rank == 0:
     print(f"warm up used time {round(time_end-time_begin, 3)}s", flush = True)
 kwargs["autotune"] = False # remember to close autotune
-com_time = 0
-########## Supervise energy consumption #######
-import multiprocessing
-from utils import monitor_gpu_power
 
-################### PERFORM TrueTask #########################################
+############## Only profile one task #######
 ntask = args.ntask
 with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA,],
         ) as prof:
     torch.cuda.synchronize()
-    time_begin = time.time()
-    stop_event = multiprocessing.Value('b', False)
-    process = multiprocessing.Process(target=monitor_gpu_power, args=(stop_event, node_idx, node_rank, trace_path))
-    process.start()
-
-    for s in range(ntask):
-        task_id = s + subtask_idx * ntask
-        if s == 0:
-            ans = scale_class.rescale(task_id, calc_task(task_id, **kwargs)[0].to(dtype=torch.complex64), **kwargs)
-        else:
-            ans += scale_class.rescale(task_id, calc_task(task_id, **kwargs)[0].to(dtype=torch.complex64), **kwargs)
-    stop_event.value = True
-    process.join()
+    task_id = 0 + subtask_idx * ntask
+    ans = scale_class.rescale(task_id, calc_task(task_id, **kwargs)[0].to(dtype=torch.complex64), **kwargs)
     torch.cuda.synchronize()
-    time_end = time.time()
+################### Save profiler #####################
+if world_rank == 0:
+    prof.export_chrome_trace(f"{trace_path}/ntask{ntask*subtasks-1}_CAL{typeCal}_COM{typecom}_TUNE{args.autotune}_Nodes{int(os.environ['nnodes'])}.json")
+    
+################### PERFORM TrueTask #########################################
+# Supervise energy consumption
+import multiprocessing
+from utils import monitor_gpu_power
+
+if world_rank == 0 and not os.path.exists(f"{result_path}/ntask{ntask*subtasks-1}"):
+    os.makedirs(f"{result_path}/ntask{ntask*subtasks-1}")
+dist.barrier()
+
+torch.cuda.synchronize()
+time_begin = time.time()
+stop_event = multiprocessing.Value('b', False)
+process = multiprocessing.Process(target=monitor_gpu_power, args=(stop_event, node_idx, node_rank, trace_path))
+process.start()
+for s in range(ntask):
+    task_id = s + subtask_idx * ntask
+    if s == 0:
+        ans = scale_class.rescale(task_id, calc_task(task_id, **kwargs)[0].to(dtype=torch.complex64), **kwargs)
+    else:
+        ans += scale_class.rescale(task_id, calc_task(task_id, **kwargs)[0].to(dtype=torch.complex64), **kwargs)
+stop_event.value = True
+process.join()
+torch.cuda.synchronize()
+time_end = time.time()
 dist.barrier()
 total_time = torch.tensor([time_end-time_begin]).to(device)
 dist.all_reduce(total_time, dist.ReduceOp.MAX)
-if world_rank == 0:
-    prof.export_chrome_trace(f"{trace_path}/ntask{ntask*subtasks-1}_CAL{typeCal}_COM{typecom}_TUNE{args.autotune}_Nodes{int(os.environ['nnodes'])}.json")
-    print(f"Profile saved to {trace_path}/ntask{ntask*subtasks-1}_CAL{typeCal}_COM{typecom}_TUNE{args.autotune}_Nodes{int(os.environ['nnodes'])}.json", flush = True)
-    print(f"Truetask used {round(total_time[0].item(), 3)} s, communication used {round(com_time, 2)}s, calculation used {round(time_end-time_begin-com_time, 2)}s", flush = True)
-    if not os.path.exists(f"{result_path}/ntask{ntask*subtasks-1}"):
-        os.makedirs(f"{result_path}/ntask{ntask*subtasks-1}")
-
 ################### Calculate energy coonsumption ###############################
-if world_rank == 0:
-    print(f"energy information saved to {trace_path}/energy/", flush=True)
 energy = utils.cal_energy(world_size//node_world_size, node_world_size, trace_path)
 if world_rank == 0:
+    print(f"Profile saved to {trace_path}/ntask{ntask*subtasks-1}_CAL{typeCal}_COM{typecom}_TUNE{args.autotune}_Nodes{int(os.environ['nnodes'])}.json", flush = True)
+    print(f"energy information saved to {trace_path}/energy/", flush=True)
     print(f"total consumption {energy} kwh", flush=True)
+    print(f"Truetask used time {round(total_time[0].item(), 3)}s", flush = True)
+
 ################### Reduce results to the first rank ##########################
 cat_res = utils.reduceAndCat(ans, reduce_job, **kwargs)
-if world_rank == 0:
-    torch.save(cat_res.cpu(), f"{result_path}/ntask{ntask*subtasks-1}/cat_res.pt")
-    print(f"save result in {result_path}/ntask{ntask*subtasks-1}/cat_res.pt", flush = True)
 
+################### Compare with benchmark #####################
+if world_rank == 0:
+    print(f"save result in {result_path}/ntask{ntask*subtasks-1}/cat_res.pt", flush = True)
+    torch.save(cat_res.cpu(), f"{result_path}/ntask{ntask*subtasks-1}/cat_res.pt")
+    
+######################### Calculate fidelity ###################################
+del stemtensor
+torch.cuda.empty_cache()
+if world_rank == 0:
+    print(f"Calculating fidelity ...", flush = True)
+utils.compareWithBenchmark(cat_res, args, ntask, bitstrings, **kwargs)
