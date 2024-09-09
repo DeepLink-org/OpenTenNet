@@ -70,8 +70,8 @@ kwargs["subtask_gps"] = subtask_gps
 kwargs["node_gps"] = node_gps
 ##################################################################################################################
 ############# SETTING UP FOR TENSOR CREATION #################################################################
-cont_file = 'TensorNetwork/reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_10_open_shortver.pt'
-nsch = torch.load(f'TensorNetwork/640G_rep_nsch640_split{split}_mg{mgmodes}_splitmn.pt')
+cont_file = 'TensorNetwork/640G/reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_10_open_shortver.pt'
+nsch = torch.load(f'TensorNetwork/640G/640G_rep_nsch640_split{split}_mg{mgmodes}_splitmn.pt')
 
 tensors, scheme, slicing_indices = torch.load(cont_file)[:3]
 nsch =  utils.prepare_nsch(nsch, split, device)
