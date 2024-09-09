@@ -73,9 +73,9 @@ kwargs["subtask_gps"] = subtask_gps
 kwargs["node_gps"] = node_gps
 ##################################################################################################################
 ############# SETTING UP FOR TENSOR CREATION #################################################################
-cont_file = 'TensorNetwork/sc38_scheme_n53_m20_2057.pt'
+cont_file = 'TensorNetwork/4T/sc38_scheme_n53_m20_2057.pt'
 # sc38_nsch_split{split}_mg{mgmodes}_splitmn_SelectStep.pt
-nsch = torch.load(f'TensorNetwork/sc38_nsch_split{split}_mg{mgmodes}_splitmn_SelectStep.pt')
+nsch = torch.load(f'TensorNetwork/4T/sc38_nsch_split{split}_mg{mgmodes}_splitmn_SelectStep.pt')
 tensors, scheme, slicing_indices, bitstrings = torch.load(cont_file)[:4]
 nsch =  utils.prepare_nsch(nsch, split, device)
 slicing_edges = list(slicing_indices.keys())
@@ -575,7 +575,7 @@ if world_rank == 0:
     print(f"Profile saved to {trace_path}/ntask{ntask*subtasks-1}_CAL{typeCal}_COM{typecom}_TUNE{args.autotune}_Nodes{int(os.environ['nnodes'])}.json", flush = True)
     print(f"energy information saved to {trace_path}/energy/", flush=True)
     print(f"total consumption {energy} kwh", flush=True)
-    print(f"Truetask used time{round(total_time[0].item(), 3)}s", flush = True)
+    print(f"Truetask used time {round(total_time[0].item(), 3)}s", flush = True)
 
 ################### Reduce results to the first rank ##########################
 cat_res = utils.reduceAndCat(ans, reduce_job, **kwargs)
@@ -584,3 +584,10 @@ cat_res = utils.reduceAndCat(ans, reduce_job, **kwargs)
 if world_rank == 0:
     print(f"save result in {result_path}/ntask{ntask*subtasks-1}/cat_res.pt", flush = True)
     torch.save(cat_res.cpu(), f"{result_path}/ntask{ntask*subtasks-1}/cat_res.pt")
+    
+######################### Calculate fidelity ###################################
+del stemtensor
+torch.cuda.empty_cache()
+if world_rank == 0:
+    print(f"Calculating fidelity ...", flush = True)
+utils.compareWithBenchmark(cat_res, args, ntask, bitstrings, **kwargs)

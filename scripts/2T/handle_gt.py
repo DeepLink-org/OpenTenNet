@@ -5,7 +5,7 @@ import csv
 device = torch.device("cpu")
 
 #### DEAL WITH truetask ######
-cont_file = 'TensorNetwork/sc38_scheme_n53_m20_2057.pt'
+cont_file = 'TensorNetwork/4T/sc38_scheme_n53_m20_2057.pt'
 tuples = torch.load(cont_file)
 
 bitstrings = tuples[3]
@@ -13,7 +13,7 @@ res_keys = [int(b,2) for b in bitstrings]
 res_keys = torch.tensor(res_keys, dtype=torch.int64).to(device)
 
 #### DEAL WITH ground truth ######
-gtFile = "results/benchmark/16T/amps3M_all.txt"
+gtFile = "results/benchmark/amps3M_all.txt"
 gt_keys = torch.zeros_like(res_keys)
 gt_data = torch.empty(res_keys.shape, device = device, dtype = torch.complex64)
 with open(gtFile, 'r') as file:
@@ -28,4 +28,4 @@ with open(gtFile, 'r') as file:
 
 gtkeys_sorted, gt_idx = torch.sort(gt_keys)
 gtdata_sorted = gt_data[gt_idx]
-gtdata_sorted = torch.save(gtdata_sorted, "results/benchmark/2T/gtdata_sorted.pt")
+gtdata_sorted = torch.save(gtdata_sorted, "results/benchmark/4T_gtdata_sorted.pt")
