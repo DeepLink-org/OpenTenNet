@@ -1,6 +1,116 @@
 import torch
 import argparse
 import os
+
+def split_real_imag(tensor, **kwargs):
+    if kwargs.get('dtype_') == "complex32Torriihalf":
+        shape = tensor.shape
+        view_as_real = torch.view_as_real(tensor)
+        real = view_as_real.flatten()[:int(view_as_real.numel()/2)].view(shape)
+        imag = view_as_real.flatten()[int(view_as_real.numel()/2):].view(shape)
+    elif kwargs.get('dtype_') == "complex32Toririhalf":
+        real = tensor.real
+        imag = tensor.imag
+    return real, imag
+
+def swap_eq_inputs(equation):
+    if '->' in equation:
+        equation = equation.split('->')
+        # modify input
+        lhs = equation[0]
+        in1, in2 = lhs.split(',')[0], lhs.split(',')[1]
+        rhs = equation[1]
+    return in2 + "," + in1 + "->" + rhs
+ 
+def diff_eq(eq, **kwargs):
+    chars = [chr(i) for i in range(ord('a'),ord('z')+1)] + [chr(i) for i in range(ord('A'),ord('Z')+1)]
+    diff = list(set(chars) - set(eq))
+    return diff
+
+def modify_eq(equation, **kwargs):
+    diff = diff_eq(equation)
+    dtype_ = kwargs.get("dtype_")
+    if '->' in equation:
+        equation = equation.split('->')
+        # modify input
+        lhs = equation[0]
+        in1, in2 = lhs.split(',')[0], lhs.split(',')[1]
+        rhs = equation[1]
+
+    if dtype_ == "complex32Toririhalf":
+        # modify input
+        in1 = in1 + diff[0]
+        in2 = in2 + diff[0]
+        in2 = diff[1] + in2
+        rhs = rhs + diff[1]
+        return in1 + "," + in2 + "->" + rhs
+    if dtype_ == "complex32Torriihalf":
+        # modify input
+        in1 = diff[0] + in1
+        in2 = diff[0] + in2 
+        in2 = diff[1] + in2
+        rhs = diff[1] + rhs
+        return in1 + "," + in2 + "->" + rhs
+
+def fill_beffer_data(input, **kwargs):
+    shape = list(input.shape); shape = [2] + shape
+    if isinstance(kwargs.get('buffer_tensors'), torch.Tensor):
+        # Reshape buffer tensors
+        buffer_tensors = kwargs["buffer_tensors"]
+        buffer_tensors = buffer_tensors.flatten()[:input.numel()*2].view(shape)
+    else:
+        # warnings.warn("Buffer tensors not given, creating tensors")
+        buffer_tensors = torch.empty(shape, dtype = torch.complex32, device = input.device)
+
+    buffer1, buffer2 = buffer_tensors[0], buffer_tensors[1]
+
+    if kwargs.get('dtype_') == "complex32Toririhalf":
+        buffer1.real.copy_(input.real)
+        buffer1.imag.copy_(-1*input.imag)
+        buffer2.real.copy_(input.imag)
+        buffer2.imag.copy_(input.real)
+
+    elif kwargs.get('dtype_') == "complex32Torriihalf":
+        in_real, in_imag = split_real_imag(input, **kwargs)
+
+        buffer1r, buffer1i = split_real_imag(buffer1, **kwargs)
+        buffer1r.copy_(in_real)
+        buffer1i.copy_(-1*in_imag)
+
+        buffer2r, buffer2i = split_real_imag(buffer2, **kwargs)
+        buffer2r.copy_(in_imag)
+        buffer2i.copy_(in_real)
+            
+    return buffer1, buffer2, buffer_tensors
+
+
+
+def torch_einsum(equation, input_0, input_1, **kwargs):
+    alpha = kwargs["alpha"] if "alpha" in kwargs.keys() else 1
+    beta = kwargs['beta'] if "beta" in kwargs.keys() else 0
+    dtype_ = kwargs.get("dtype_")
+
+    ##########  modify equation and tensors ########## 
+    if dtype_ == "complex32Toririhalf" or dtype_ == "complex32Torriihalf":
+        eq_org = equation
+        if (input_0.numel() < input_1.numel()): # buffer the smaller tensor
+            equation = swap_eq_inputs(equation)
+            in1_buffer1, in1_buffer2, buffer_tensors = fill_beffer_data(input_0, **kwargs)
+            input_0 = input_1
+        else:
+            in1_buffer1, in1_buffer2, buffer_tensors = fill_beffer_data(input_1, **kwargs)
+        ########## Modify equation ###########
+        equation = modify_eq(equation, **kwargs)
+        output = torch.einsum(equation, torch.view_as_real(input_0), torch.view_as_real(buffer_tensors))
+        output.mul_(alpha)
+        
+    else:
+        output = torch.einsum(equation, input_0, input_1)
+        output.mul_(alpha)
+    
+    return torch.view_as_complex(output).contiguous()
+
+
 def remove_common_suffixes(s1, s2):
     index = 0
     while index < len(s1) and index < len(s2) and s1[-index-1] == s2[-index-1]:
