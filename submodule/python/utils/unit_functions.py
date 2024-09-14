@@ -212,12 +212,12 @@ def compareWithBenchmark(cat_res, args, ntask, bitstrings = None, fakebenchmark 
             print(f"fidelity / expected          : {round(fidelity/expected, 5)}", flush = True)
 
     elif args.tensorNetSize == "16T":
-        benckmark = f"results/benchmark/{args.tensorNetSize}/gtdata_sorted.pt"
+        benckmark = f"results/benchmark/32T_gtdata_sorted.pt"
         groundTruth = torch.load(benckmark).to(device).view(-1)
         cat_res = cat_res[res_idx].view(-1)
         fidelity = ((groundTruth.conj() @ cat_res.reshape(-1)).abs() / (groundTruth.abs().square().sum().sqrt() * cat_res.abs().square().sum().sqrt())).square().item()
         if world_rank == 0:
             expected = 0.002
-            print(f"fidelity of 2T               : {round(fidelity, 8)}")
+            print(f"fidelity of 32T           : {round(fidelity, 8)}")
             print(f"expected fidelity(0.002)  : {round(expected, 8)}")
-            print(f"fidelity/expected            : {round(fidelity/expected, 8)}")
+            print(f"fidelity / expected        : {round(fidelity/expected, 5)}")
