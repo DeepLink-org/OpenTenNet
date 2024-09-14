@@ -212,6 +212,92 @@ chmod +x run_4T_recal.sh
 </details>
 <br>
 
+### 5. 32T TensorNetwork (Optional)
+#### 5.1 Uncompress tensor network configuration
+```
+# with post-process
+unxz TensorNetwork/32T/sc41_reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_13_open.pt.xz
+
+# without post-process
+unxz TensorNetwork/32T/sc41_scheme_n53_m20_1646.pt.xz
+```
+#### 5.2 Generate tensor network
+To grant execution permissions to the script `open_pre4T_xxx.sh` within the `TensorNetwork` directory, use the following command:
+```
+# no post-process
+chmod +x TensorNetwork/32T/pre32T.sh
+
+# post-process 
+chmod +x TensorNetwork/32T/open_pre32T.sh
+```
+
+<details>
+<summary><span style="font-weight: bold;"> Explanation of open_pre32T_xxx.sh <span></summary>
+
+  The bash script looks like:
+  ```
+  export nodes_per_task=32
+  export ntasks_per_node=8
+  python TensorNetwork/32T/open_pre32T.py
+  ```
+  Here, `nodes_per_task` represents the number of nodes required for a multi-node level task, while `ntasks_per_node` denotes the number of GPUs per node. Please remember to adjust the values of `nodes_per_task` and `ntasks_per_node` according to the specific node configuration you intend to utilize.
+</details>
+<br>
+
+To initiate the tensor network generation process, execute the script with the command:
+```
+# no post-process
+./TensorNetwork/32T/pre32T.sh
+
+# post-process
+./TensorNetwork/32T/open_pre32T.sh
+```
+
+#### 5.3 Excecution
+```
+# no post-process
+chmod +x run_32T.sh
+./run_32T.sh
+
+# post-process
+chmod +x run_open_32T.sh
+./run_open_32T.sh
+```
+<details>
+<summary><span style="font-weight: bold;">Command Line Arguments for run_open_4T_xx.sh </span></summary>
+  
+  #### nnodes
+  The total number of nodes used globally. This corresponds to the global level of our three-level scheme, and this value must be an integer multiple of ```nodes_per_task```.
+  
+  #### nodes_per_task
+  The number of nodes required for a multi-node level task.
+  
+  #### WORLD_SIZE
+  The total number of GPUs required globally, corresponds to the device level of the three-level scheme.
+  
+  #### --warmup
+  Whether the GPU warms up before the official operation. ```0``` represents no warm-up, and ```1``` represents warm-up.
+  #### --data_type
+  The calculation type. ```0``` represents complexHalf, ```1``` represent complexFloat.
+  
+  #### --is_scale
+  Calculate the scaling factor for the `complex32` calculation mode, with a default value of `1`.
+  
+  #### --autotune
+  Tuning for the best algorithms for einsum calculation, with a default value of `1`.
+  #### --ntask
+  We execute the number of multi-node level tasks, where the number of global-level tasks is equal to ```ntask``` * (```nnodes``` / ```nodes per task```).
+  #### --tensorNetSize
+  The size of tensor networks.
+  #### --typeCom
+  Data type for communication.  If provided ```int4kernel```, ```int8kernel```, ```HalfKernel```, uses user-defined int4, int8 and half for communication, respectively.
+
+  #### --groupsize
+  Group size when typeCom equals int4kernel. ```128``` by default.
+  
+</details>
+<br>
+
 ### Evaluation
 The output looks like:
 ```
@@ -228,10 +314,5 @@ expected fidelity(0.002)   : XX
 fidelity / expected        : XX
 ```
 After the execution, you will find the time-to-solution, a profile path, energy consumption, an energy log, and the fidelity in the output. To assess the time taken by computation and communication, you can visit https://pytorch.org/docs/stable/profiler.html and load the profile json file. If you want to analyze detailed energy information instead of just the total consumption, you can delve into the energy log.
-
-
-
-  
-
 
 
