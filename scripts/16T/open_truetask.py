@@ -73,8 +73,8 @@ kwargs["subtask_gps"] = subtask_gps
 kwargs["node_gps"] = node_gps
 ##################################################################################################################
 ############# SETTING UP FOR TENSOR CREATION #################################################################
-cont_file = 'TensorNetwork/sc41_reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_13_open.pt'
-nsch = torch.load(f'TensorNetwork/open_sc41_nsch_split{split}_mg{8}_1646_splitmn.pt')
+cont_file = 'TensorNetwork/32T/sc41_reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_13_open.pt'
+nsch = torch.load(f'TensorNetwork/32T/open_sc41_nsch_split{split}_mg{8}_1646_splitmn.pt')
 if world_rank == 0:
     print(f'load TensorNetwork/open_sc41_nsch_split{split}_mg{8}_1646_splitmn.pt')
 tensors, scheme, slicing_indices, bitstrings = torch.load(cont_file)[:4]
@@ -148,8 +148,8 @@ class MgTensor:
         #     print(f"ein {ein}", flush=True)
         #     print(f"ein_new {ein_new}", flush=True)
         if ein_list[0][:mnmodes] != ein_list[2][:mnmodes]:
-            if world_rank == 0:
-                print(f"nstep {nstep}，节点间 ein {ein}", flush = True)
+            # if world_rank == 0:
+            #     print(f"nstep {nstep}，节点间 ein {ein}", flush = True)
             group = subtask_gps[subtask_idx]
             if "half" in typeCom:
                 int_com.half_communicate(task_id, nstep, self, group, **kwargs)
@@ -157,8 +157,8 @@ class MgTensor:
                 int_com.int8_communicate(task_id, nstep, self, group, **kwargs)
             elif typeCom == "int4kernel":
                 groupsize = 128
-                if world_rank==0:
-                    print(f"group size {groupsize}", flush=True)
+                # if world_rank==0:
+                #     print(f"group size {groupsize}", flush=True)
                 int_com.int4_communicate(task_id, nstep, self, group, groupsize, **kwargs)
             else:
                 rawtensor = self.curtensor.flatten(end_dim = mgmodes-1)
@@ -166,8 +166,8 @@ class MgTensor:
                 dist.all_to_all_single(newmgtensor, rawtensor, group = group)
                 self.setnewtensor(self.shape)
         elif ein_list[0][mnmodes:mgmodes] != ein_list[2][mnmodes:mgmodes]:
-            if world_rank == 0:
-                print(f"nstep {nstep}，节点内 ein {ein}", flush = True)
+            # if world_rank == 0:
+            #     print(f"nstep {nstep}，节点内 ein {ein}", flush = True)
             group = node_gps[node_idx]
             rawtensor = self.curtensor.flatten(end_dim = mgmodes-mnmodes-1)
             newmgtensor = self.nexttensor
@@ -208,13 +208,13 @@ def EinsumGeneralV2_choose_method(nstep, mgtensor, ein, tensor_j, **kwargs):
     if nstep == 133:
         # ypncbjSEXOVlqIWsH#DikwTGYZLhMvaNg,uA@JFeQtfPGYZLhMvaNg->ypncbjSuEXAO@JFVleqIWsH#DikQtfwTP
         ein_batch = ein_list[0][1:] + "," +  ein_list[1] + "->" + ein_list[2][1:]
-        if world_rank == 0:
-            print(f"special step {nstep}, ein {ein}", flush=True)
-            print(f"special step {nstep}, ein_batch {ein_batch}", flush=True)
+        # if world_rank == 0:
+        #     print(f"special step {nstep}, ein {ein}", flush=True)
+        #     print(f"special step {nstep}, ein_batch {ein_batch}", flush=True)
         EinsumGeneralV2(mgtensor.nexttensor, ein_batch, mgtensor.curtensor[0], tensor_j, **kwargs)
         EinsumGeneralV2(mgtensor.nexttensor.flatten()[2**(len(ein_list[2][1:])):], ein_batch, mgtensor.curtensor[1], tensor_j, **kwargs)
-        if world_rank == 0:
-            print(f"finished nstep =  133", flush = True)
+        # if world_rank == 0:
+        #     print(f"finished nstep =  133", flush = True)
     else:
         EinsumGeneralV2(mgtensor.nexttensor, ein, mgtensor.curtensor, tensor_j, **kwargs)
     mgtensor.setnewtensor(newshape)
@@ -277,9 +277,9 @@ def cont_nsch_split(tensors, nsch, task_id, **kwargs):
                 else:
                     tensors[i] = EinsumGeneral(step['ein_2'], tensors[i], tensors[j], **kwargs)
                 tensors[j] = []
-            if world_rank == 0:
-                if kwargs['alpha'] != 1:
-                    print(f"kwargs['alpha'] {kwargs['alpha']}", flush=True)
+            # if world_rank == 0:
+            #     if kwargs['alpha'] != 1:
+            #         print(f"kwargs['alpha'] {kwargs['alpha']}", flush=True)
 
     if type(tensors[i]) == utils.MgTensorSplit:
         return torch.cat([x for x in tensors[i].curtensors])
@@ -324,27 +324,20 @@ if world_rank == 0:
     print(f"warm up used time {round(time_end-time_begin, 3)}s", flush = True)
 kwargs["autotune"] = False # remember to close autotune
 del ans; torch.cuda.empty_cache()
-############## Only profile one task ######################################
+
+############## Only profile one task #######
 ntask = args.ntask
-if 1:
-    with torch.profiler.profile(
-            activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA,],
-            schedule=torch.profiler.schedule(
-                wait=0,
-                warmup=0,
-                active=1,
-                repeat=0),
-            ) as prof:
-        task_id = 0 + subtask_idx * ntask
-        ans = calc_task(task_id, **kwargs)[0]
-        prof.step()
-    dist.barrier()
+with torch.profiler.profile(
+        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA,],
+        ) as prof:
     torch.cuda.synchronize()
-    if world_rank == 0:
-        prof.export_chrome_trace(f"{trace_path}/ntask{ntask*subtasks-1}_CAL{typeCal}_COM{typecom}_TUNE{args.autotune}_Nodes{int(os.environ['nnodes'])}.json")
-        
-    del ans
-torch.cuda.empty_cache()
+    task_id = 0 + subtask_idx * ntask
+    ans = scale_class.rescale(task_id, calc_task(task_id, **kwargs)[0].to(dtype=torch.complex64), **kwargs)
+    torch.cuda.synchronize()
+################### Save profiler #####################
+if world_rank == 0:
+    prof.export_chrome_trace(f"{trace_path}/ntask{ntask*subtasks-1}_CAL{typeCal}_COM{typecom}_TUNE{args.autotune}_Nodes{int(os.environ['nnodes'])}.json")
+
 ################### PERFORM TrueTask #########################################
 # Supervise energy consumption
 import multiprocessing
@@ -382,10 +375,11 @@ dist.all_reduce(total_time, dist.ReduceOp.MAX)
 ################### Calculate energy coonsumption ###############################
 energy = utils.cal_energy(world_size//node_world_size, node_world_size, trace_path)
 if world_rank == 0:
+    print(f"***************** Results *******************\n", flush=True)
     print(f"Profile saved to {trace_path}/ntask{ntask*subtasks-1}_CAL{typeCal}_COM{typecom}_TUNE{args.autotune}_Nodes{int(os.environ['nnodes'])}.json", flush = True)
     print(f"energy information saved to {trace_path}/energy/", flush=True)
     print(f"total consumption {energy} kwh", flush=True)
-    print(f"Truetask used time{round(total_time[0].item(), 3)} s", flush = True)
+    print(f"Truetask used time {round(total_time[0].item(), 3)} s", flush = True)
 ######################### Reduce answer ########################################
 del stemtensor; torch.cuda.empty_cache()
 torch.cuda.synchronize()
@@ -393,9 +387,79 @@ time_begin = time.time()
 ans = utils.reduceAns(ans, reduce_job, **kwargs)
 torch.cuda.synchronize()
 time_end = time.time()
+dist.barrier()
 if world_rank == 0:
     print(f"Reduce answer used time {round(time_end-time_begin, 6)}s", flush = True)
     print(f"save result in {result_path}/ntask{ntask*subtasks-1}/", flush = True)
-    print(f"ans on rank{subtask_rank} occupies {8.*ans.numel()/2**30} G")
 if subtask_idx == 0:
     torch.save(ans.cpu(), f"{result_path}/ntask{ntask*subtasks-1}/rank{subtask_rank}.pt")
+    
+######################### Calculate fidelity ###################################
+import numpy as np
+import pandas as pd
+if world_rank == 0:
+    print(f"Calculating fidelity ...", flush = True)
+    prefix = f"{result_path}/ntask{ntask*subtasks-1}"
+    data2 = torch.cat([torch.load(prefix + f'/rank{rank}.pt') for rank in range(subtask_world_size)])
+
+    bitstringopen = torch.load('TensorNetwork/32T/sc41_reproduce_scheme_n53_m20_ABCDCDAB_3000000_einsum_13_open.pt')[-1]
+
+    permute_idx = [7, 3, 12, 0, 4, 5, 6, 10, 8, 11, 9, 1, 2] # this is the permutation index of open result
+    open_qubits = sorted([11, 12, 13, 19, 20, 22, 23, 28, 33, 37, 38, 40, 44])
+
+    close_qubits = list(set(range(53)) - set(open_qubits))
+
+    def find_corresponding_indices(dig, dig_raw_pre):
+        mapping = {}
+        for index, num in enumerate(dig):
+            mapping[num] = index
+
+        result = []
+        for num in dig_raw_pre:
+            assert num in mapping
+            result.append(mapping[num])
+
+        return result
+
+
+    # 读取文件，设定分隔符为 "\t"
+    df = pd.read_csv("results/benchmark/amps3M_all.txt", sep="\t", header=None)
+
+    def parse_complex(string):
+        string = string.strip('()')  # remove parentheses
+        real, imag = map(float, string.split(','))  # split on comma and convert to float
+        return complex(real, imag)  # return complex number
+
+    # 将第二列的字符串转换成复数
+    df[1] = df[1].apply(lambda x: parse_complex(x))
+
+    # 为列命名
+    df.columns = ["Binary", "Complex", "Float"]
+
+    df["BinaryClose"] = df["Binary"].apply(lambda x: "".join(np.array(list(x))[close_qubits]))
+    df["Closeidx"] = df["Binary"].apply(lambda x: 
+                                    np.frombuffer(bytes(x,'ascii'), dtype=np.uint8)[open_qubits][permute_idx]
+                                                - ord('0'))
+    corresponding_indices = find_corresponding_indices(bitstringopen,df["BinaryClose"])
+    amp_exact = df["Complex"].values
+
+    x=0
+    bitstringopen[x], df["Closeidx"].values[x]
+
+    index_array = np.array(corresponding_indices).reshape(-1)
+    closeidx = (np.stack(df["Closeidx"].values)*np.array([2**(len(open_qubits)-x-1) for x in range(len(open_qubits))])).sum(axis=-1)
+    index_array = index_array*(2**len(open_qubits)) + closeidx
+
+    amp_sel = data2.flatten().index_select(0, torch.from_numpy(index_array))
+    amplitude_exact = torch.tensor(amp_exact.copy(),dtype=torch.complex64)[:]
+    amplitude_appro = amp_sel.clone().to(torch.complex64)[:]
+    fidelity = (
+        (amplitude_exact.conj() @ amplitude_appro.reshape(-1)).abs() /
+        (amplitude_exact.abs().square().sum().sqrt() * amplitude_appro.abs().square().sum().sqrt())
+    ).square().item()
+    fidelity = fidelity*np.log(1024)
+
+    expected=0.002
+    print(f"fidelity of 32T            : {round(fidelity, 8)}")
+    print(f"expected fidelity(0.002)   : {round(expected, 8)}")
+    print(f"fidelity / expected        : {round(fidelity/expected, 4)}")
