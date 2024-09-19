@@ -111,7 +111,7 @@ class MgTensor:
             self.shape = sgtensor.shape
             self.curtensor = sgtensor
     
-    def einsum(self, nstep, ein, insg2, task_id, mnmodes, mgmodes, **kwargs):
+    def einsum(self, nstep, ein, insg2, task_id, **kwargs):
         typeCom = kwargs["typeCom"]
         ein_list = re.split('->|,', ein)
         mgchar = list(ein_list[2][:mgmodes])
@@ -141,15 +141,18 @@ class MgTensor:
                 newmgtensor = torch.empty_like(rawtensor)
                 dist.all_to_all_single(newmgtensor, rawtensor, group = group)
                 self.curtensor = newmgtensor.view(self.shape)
-
+                rawtensor = None; torch.cuda.empty_cache()
+                
         elif ein_list[0][mnmodes:mgmodes] != ein_list[2][mnmodes:mgmodes]:
             # if world_rank == 0:
             #     print(f"nstep {nstep}，节点内 ein {ein}", flush = True)
+            self.shape = self.curtensor.shape
             group = node_gps[node_idx]
             rawtensor = self.curtensor.flatten(end_dim = mgmodes-mnmodes-1)
             newmgtensor = torch.empty_like(rawtensor)
             dist.all_to_all_single(newmgtensor, rawtensor, group = group)
             self.curtensor = newmgtensor.view(self.shape)
+            rawtensor = None; torch.cuda.empty_cache()
         # if world_rank == 0:
         #     print(f"nstep {nstep}, mgmodes {mgmodes}, ein {ein}, ein_new {ein_new}", flush = True)
         EinsumGeneralV2_choose_method(nstep, self, ein_new, insg2, **kwargs)
@@ -180,8 +183,9 @@ def EinsumGeneralV2_choose_method(nstep, mgtensor, ein, tensor_j, **kwargs):
 
 def cont_nsch_split(tensors, nsch, task_id, **kwargs):
     for nstep, step in enumerate(nsch):
-        # if world_rank == 0:
-        #     print(f"nstep {nstep}", flush = True)
+        dist.barrier()
+        if world_rank == 0:
+            print(f"nstep {nstep}", flush = True)
         with record_function(f"step{nstep}"):
             i, j = step['index']
 
@@ -231,7 +235,7 @@ def cont_nsch_split(tensors, nsch, task_id, **kwargs):
                         tensors[i] = MgTensor(tensors[i], mgmodes)
                     else:
                         assert type(tensors[i]) == MgTensor
-                        tensors[i].einsum(nstep, step['reorder_ein'], tensors[j], task_id, args.use_int8, **kwargs)
+                        tensors[i].einsum(nstep, step['reorder_ein'], tensors[j], task_id, **kwargs)
                 else:
                     # torch.cuda.empty_cache()
                     tensors[i] = utils.torch_einsum(step['ein_2'],tensors[i], tensors[j], **kwargs)
@@ -334,7 +338,7 @@ if world_rank == 0:
     print(f"energy information saved to {trace_path}/energy/", flush=True)
     print(f"total consumption {energy} kwh", flush=True)
     print(f"Truetask used time {round(total_time[0].item(), 3)} s", flush = True)
-    print(f"torch.memory.allocated {torch.cuda.memory_allocated()/2**30} G, torch.memory.reserved {torch.cuda.memory_reserved()/2**30} G", flush = True)
+    print(f"torch.memory.allocated {torch.cuda.max_memory_allocated()/2**30} G, torch.memory.reserved {torch.cuda.max_memory_reserved()/2**30} G", flush = True)
 
 ######################### Reduce answer ########################################
 del stemtensor; torch.cuda.empty_cache()

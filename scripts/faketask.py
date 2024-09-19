@@ -131,7 +131,7 @@ class MgTensor:
             self.shape = sgtensor.shape
             self.curtensor[:] = sgtensor
     
-    def einsum(self, nstep, ein, insg2, task_id, mnmodes, mgmodes, **kwargs):
+    def einsum(self, nstep, ein, insg2, task_id, **kwargs):
         typeCom = kwargs["typeCom"]
         ein_list = re.split('->|,', ein)
         mgchar = list(ein_list[2][:mgmodes])
@@ -257,7 +257,7 @@ def cont_nsch_split(tensors, nsch, task_id, **kwargs):
                         tensors[i] = MgTensor(stemtensor, tensors[i], mgmodes)
                     else:
                         assert type(tensors[i]) == MgTensor
-                        tensors[i].einsum(nstep, step['reorder_ein'], tensors[j], task_id, args.use_int8, **kwargs)
+                        tensors[i].einsum(nstep, step['reorder_ein'], tensors[j], task_id, **kwargs)
                 else:
                     if nstep == 438:
                         newshape = getOutputShape(step['ein_2'], tensors[i], tensors[j], **kwargs)

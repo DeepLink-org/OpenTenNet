@@ -101,6 +101,7 @@ def torch_einsum(equation, input_0, input_1, **kwargs):
             in1_buffer1, in1_buffer2, buffer_tensors = fill_beffer_data(input_1, **kwargs)
         ########## Modify equation ###########
         equation = modify_eq(equation, **kwargs)
+        torch.cuda.empty_cache()
         output = torch.einsum(equation, torch.view_as_real(input_0), torch.view_as_real(buffer_tensors))
         output.mul_(alpha)
         

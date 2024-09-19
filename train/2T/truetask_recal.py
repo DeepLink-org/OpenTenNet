@@ -139,7 +139,7 @@ class MgTensor:
                 print(f"ERROR, not implemented for this type", flush=True)
                 
     
-    def einsum(self, nstep, ein, insg2, task_id, mnmodes, mgmodes, **kwargs):
+    def einsum(self, nstep, ein, insg2, task_id, **kwargs):
         typeCom = kwargs["typeCom"]
         ein_list = re.split('->|,', ein)
         mgchar = list(ein_list[2][:mgmodes])
