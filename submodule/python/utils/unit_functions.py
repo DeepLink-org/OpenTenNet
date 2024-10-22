@@ -1,7 +1,7 @@
 import torch
 import argparse
 import os
-
+import re
 def split_real_imag(tensor, **kwargs):
     if kwargs.get('dtype_') == "complex32Torriihalf":
         shape = tensor.shape
@@ -78,7 +78,100 @@ def fill_beffer_data(input, **kwargs):
             
     return buffer1, buffer2, buffer_tensors
 
+def Einsum2Matmul(equation, mgtensor, input1, **kwargs):
+    ein_list = re.split('->|,', equation)
+    ein_0, ein_1, Ncommon = remove_common_suffixes(ein_list[0], ein_list[1])
+    ein0_reduce, ein1_reduce = get_ein_reduce_suffixes(ein_list[0], ein_list[1], ein_list[2])
+    if len(ein0_reduce) == 0 and len(ein1_reduce) == 0 and len(ein_0+ein_1) == len(ein_list[2]):
+        alpha = kwargs["alpha"] if "alpha" in kwargs.keys() else 1
+        beta = kwargs['beta'] if "beta" in kwargs.keys() else 0
+        dtype_ = kwargs.get("dtype_")
+        ##########  modify equation and tensors ########## 
+        if dtype_ == "complex32Toririhalf" or dtype_ == "complex32Torriihalf":
+            eq_org = equation
+            in1_buffer1, in1_buffer2, buffer_tensors = fill_beffer_data(input1, **kwargs)
+            equation = modify_eq(equation, **kwargs)
+            # torch.cuda.empty_cache()
+            buffer_tensors.mul_(alpha)
 
+            in0 = torch.view_as_real(mgtensor.curtensor).flatten().view([-1, 2**(Ncommon+1)])
+            assert in0.is_contiguous()
+            in1 = torch.view_as_real(buffer_tensors).flatten().view([-1, 2**(Ncommon+1)]).T
+            output = torch.view_as_real(mgtensor.nexttensor).flatten()[:in0.shape[0] * in1.shape[1]].view([in0.shape[0], in1.shape[1]])
+            torch.matmul(input = in0, other = in1, out = output)
+            mgtensor.setnewtensor([2] * len(ein_list[2]))
+
+            ein_list = re.split('->|,', equation)
+            output = output.view([2]*(len(ein_list[2])))     
+            
+            tmp = output.permute([(ein_0 + ein_list[1][0]+ein_1).find(x) for x in ein_list[2]])
+            torch.view_as_real(mgtensor.nexttensor).flatten()[: tmp.numel()].view(tmp.shape).copy_(tmp)
+            mgtensor.setnewtensor([2] * (len(ein_list[2])-1))
+
+    else:
+        def input_permutedEin(str1, str2):
+            common = []
+            # 将字符串转换为集合
+            set1 = set(str1)
+            set2 = set(str2)
+            
+            # 取两个集合的交集
+            intersection = set1 & set2
+            
+            for char in str1:
+                if char in intersection:
+                    common.append(char)
+            ein0 = []; ein1 = []
+            for char in str1:
+                if char not in intersection:
+                    ein0.append(char)
+            for char in str2:
+                if char not in intersection:
+                    ein1.append(char)
+            return "".join(ein0+common), "".join(ein1+common)
+        ein0permuterd, ein1permuted = input_permutedEin(ein_list[0], ein_list[1])
+
+        tmp = mgtensor.curtensor[: 2**len(ein_list[0])].view([2]*len(ein_list[0])).permute([ein_list[0].find(x) for x in ein0permuterd])
+        
+        mgtensor.nexttensor[: tmp.numel()].view(tmp.shape).copy_(tmp)
+        mgtensor.setnewtensor(tmp.shape)
+        
+        equation = ein0permuterd + "," + ein1permuted + "->" + ein_list[2]
+        input1 = input1.permute([ein_list[1].find(x) for x in ein1permuted]).contiguous()
+        Einsum2Matmul(equation, mgtensor, input1, **kwargs)
+
+        # else:    
+        #     import pdb; pdb.set_trace()
+        #     raise NotImplementedError("This functionality has not been implemented yet.")
+        
+def torch_matmul(equation, ein_0, ein_1, Ncommon, ein_out, input_0, input_1, **kwargs):
+    alpha = kwargs["alpha"] if "alpha" in kwargs.keys() else 1
+    beta = kwargs['beta'] if "beta" in kwargs.keys() else 0
+    dtype_ = kwargs.get("dtype_")
+    ##########  modify equation and tensors ########## 
+    if dtype_ == "complex32Toririhalf" or dtype_ == "complex32Torriihalf":
+        eq_org = equation
+        in1_buffer1, in1_buffer2, buffer_tensors = fill_beffer_data(input_1, **kwargs)
+        equation = modify_eq(equation, **kwargs)
+        # torch.cuda.empty_cache()
+        buffer_tensors.mul_(alpha)
+
+        in0 = torch.view_as_real(input_0).flatten().view([-1, 2**(Ncommon+1)])
+        assert in0.is_contiguous()
+        in1 = torch.view_as_real(buffer_tensors).flatten().view([-1, 2**(Ncommon+1)]).T
+        output = torch.empty([in0.shape[0], in1.shape[1]], device = in0.device, dtype = in0.dtype)
+        torch.matmul(input = in0, other = in1, out = output)
+        output = output.view([2]*(len(ein_out)+1))        
+        ein_list = re.split('->|,', equation)
+        
+        output = output.permute([(ein_0 + ein_list[1][0]+ein_1).find(x) for x in ein_list[2]]).contiguous()
+        output = torch.view_as_complex(output)
+        
+
+    else:
+        raise NotImplementedError("This functionality has not been implemented yet.")
+    
+    return output
 
 def torch_einsum(equation, input_0, input_1, **kwargs):
     alpha = kwargs["alpha"] if "alpha" in kwargs.keys() else 1
@@ -95,24 +188,49 @@ def torch_einsum(equation, input_0, input_1, **kwargs):
             in1_buffer1, in1_buffer2, buffer_tensors = fill_beffer_data(input_1, **kwargs)
         ########## Modify equation ###########
         equation = modify_eq(equation, **kwargs)
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
         buffer_tensors.mul_(alpha)
         output = torch.einsum(equation, torch.view_as_real(input_0), torch.view_as_real(buffer_tensors))
-        # output.mul_(alpha)
         
     else:
         input_1.mul_(alpha)
         output = torch.einsum(equation, input_0, input_1)
-        # output.mul_(alpha)
     
     return torch.view_as_complex(output).contiguous()
 
+def get_ein_reduce_suffixes(in0, in1, out):
+    """
+    Get the suffixes of inputs but not in out.
+
+    Parameters:
+    in0 (str): The first input tensor suffix.
+    in1 (str): The second input tensor suffix.
+    out (str): The output tensor suffix.
+
+    Returns:
+    in0_reduce_suffixes: A list containing the suffixes of `in0` that are not in `out` or "in1".
+    in1_reduce_suffixes: A list containing the suffixes of `in1` that are not in `out` or "in0".
+    """
+    # Find the suffixes in in0 and in1 that are not in out
+    set0 = set(in1 + out)
+    set1 = set(in0 + out)
+    in0_reduce_suffixes = []; in1_reduce_suffixes = []
+    for char in in0:
+        if char not in set0:
+            in0_reduce_suffixes.append(char)
+    for char in in1:
+        if char not in set1:
+            in1_reduce_suffixes.append(char)
+
+    return in0_reduce_suffixes, in1_reduce_suffixes
 
 def remove_common_suffixes(s1, s2):
     index = 0
     while index < len(s1) and index < len(s2) and s1[-index-1] == s2[-index-1]:
         index += 1
-    return s1[:-index], s2[:-index], index  
+    if s1[-index:] == s2[-index:]:
+        return s1[:-index], s2[:-index], index
+    return [], [], 0
 
 def prepare_nsch(nsch, split, device):
     for i in range(len(nsch)):
