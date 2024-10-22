@@ -120,8 +120,9 @@ class MgTensor:
         ein_new = re.sub('|'.join(mgchar), '', ein_new)
         # if world_rank == 0:
         #     print(f"nstep {nstep}", flush=True)
-        #     print(f"ein {ein}", flush=True)
-        #     print(f"ein_new {ein_new}", flush=True)
+        #     print(f"input_sum {self.curtensor.sum()}", flush=True)
+            # print(f"ein {ein}", flush=True)
+            # print(f"ein_new {ein_new}", flush=True)
         if ein_list[0][:mnmodes] != ein_list[2][:mnmodes]:
             # if world_rank == 0:
             #     print(f"nstep {nstep}，节点间 ein {ein}", flush = True)
@@ -141,7 +142,8 @@ class MgTensor:
                 newmgtensor = torch.empty_like(rawtensor)
                 dist.all_to_all_single(newmgtensor, rawtensor, group = group)
                 self.curtensor = newmgtensor.view(self.shape)
-                rawtensor = None; torch.cuda.empty_cache()
+                rawtensor = None
+                # torch.cuda.empty_cache()
                 
         elif ein_list[0][mnmodes:mgmodes] != ein_list[2][mnmodes:mgmodes]:
             # if world_rank == 0:
@@ -152,10 +154,13 @@ class MgTensor:
             newmgtensor = torch.empty_like(rawtensor)
             dist.all_to_all_single(newmgtensor, rawtensor, group = group)
             self.curtensor = newmgtensor.view(self.shape)
-            rawtensor = None; torch.cuda.empty_cache()
+            rawtensor = None
+            # torch.cuda.empty_cache()
         # if world_rank == 0:
         #     print(f"nstep {nstep}, mgmodes {mgmodes}, ein {ein}, ein_new {ein_new}", flush = True)
         EinsumGeneralV2_choose_method(nstep, self, ein_new, insg2, **kwargs)
+        # if world_rank == 0:
+        #     print(f"output_sum {self.curtensor.sum()}\n", flush=True)
     
     def flatsplit(self, flat, split, chunks = split // subtask_world_size, mgmodes = mgmodes):
         # Here I assumed that the tensors won't be larger than the splited tensor
@@ -175,7 +180,7 @@ def EinsumGeneralV2_choose_method(nstep, mgtensor, ein, tensor_j, **kwargs):
     ein_list = re.split('->|,', ein)
     ein_0, ein_1, _ = utils.remove_common_suffixes(ein_list[0], ein_list[1])
     ein_mm = ein_list[0] + "," + ein_list[1] + "->" + ein_0 + ein_1
-    ein_permute = ein_0 + ein_1 + "->" + ein_list[2]   
+    
     # torch.cuda.empty_cache()
     mgtensor.curtensor = utils.torch_einsum(ein, mgtensor.curtensor, tensor_j, **kwargs)
 
@@ -183,9 +188,8 @@ def EinsumGeneralV2_choose_method(nstep, mgtensor, ein, tensor_j, **kwargs):
 
 def cont_nsch_split(tensors, nsch, task_id, **kwargs):
     for nstep, step in enumerate(nsch):
-        dist.barrier()
-        if world_rank == 0:
-            print(f"nstep {nstep}", flush = True)
+        # if world_rank == 0:
+        #     print(f"nstep {nstep}", flush = True)
         with record_function(f"step{nstep}"):
             i, j = step['index']
 
@@ -241,9 +245,9 @@ def cont_nsch_split(tensors, nsch, task_id, **kwargs):
                     tensors[i] = utils.torch_einsum(step['ein_2'],tensors[i], tensors[j], **kwargs)
                     
                 tensors[j] = []
-            if world_rank == 0:
-                if kwargs['alpha'] != 1:
-                    print(f"kwargs['alpha'] {kwargs['alpha']}", flush=True)
+            # if world_rank == 0:
+            #     if kwargs['alpha'] != 1:
+            #         print(f"kwargs['alpha'] {kwargs['alpha']}", flush=True)
 
     if type(tensors[i]) == utils.MgTensorSplit:
         return torch.cat([x for x in tensors[i].curtensors])
@@ -290,19 +294,27 @@ if world_rank == 0:
 kwargs["autotune"] = False # remember to close autotune
 del ans; torch.cuda.empty_cache()
 ############## Only profile one task #######
+torch.cuda.empty_cache()
 ntask = args.ntask
-with torch.profiler.profile(
-        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA,],
-        ) as prof:
+if 1:
+    with torch.profiler.profile(
+            activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA,],
+            schedule=torch.profiler.schedule(
+                wait=0,
+                warmup=0,
+                active=1,
+                repeat=0),
+            ) as prof:
+        task_id = 0 + subtask_idx * ntask
+        ans = calc_task(task_id, **kwargs)[0]
+        prof.step()
+    dist.barrier()
     torch.cuda.synchronize()
-    task_id = 0 + subtask_idx * ntask
-    ans = calc_task(task_id, **kwargs)
-    torch.cuda.synchronize()
-del ans; torch.cuda.empty_cache()
-################### Save profiler #####################
-if world_rank == 0:
-    prof.export_chrome_trace(f"{trace_path}/ntask{ntask*subtasks-1}_CAL{typeCal}_COM{typecom}_TUNE{args.autotune}_Nodes{int(os.environ['nnodes'])}.json")
-    
+    if world_rank == 0:
+        prof.export_chrome_trace(f"{trace_path}/ntask{ntask*subtasks-1}_CAL{typeCal}_COM{typecom}_TUNE{args.autotune}_Nodes{int(os.environ['nnodes'])}.json")
+        print(f"Profile saved to {trace_path}/ntask{ntask*subtasks-1}_CAL{typeCal}_COM{typecom}_TUNE{args.autotune}_Nodes{int(os.environ['nnodes'])}.json", flush = True)
+    del ans
+torch.cuda.empty_cache()
 ################### PERFORM TrueTask #########################################
 # Supervise energy consumption
 import multiprocessing
@@ -320,16 +332,22 @@ process.start()
 for s in range(ntask):
     task_id = s + subtask_idx * ntask
     if s == 0:
-        ans = calc_task(task_id, **kwargs)[0]
+        if typeCal== "complexHalf" and args.is_scale:
+            ans = scale_class.rescale(task_id, calc_task(task_id, **kwargs)[0].to(dtype=torch.complex64), **kwargs)
+        else:
+            ans = calc_task(task_id, **kwargs)[0]
     else:
-        ans += calc_task(task_id, **kwargs)[0]
+        if typeCal== "complexHalf" and args.is_scale:
+            ans += scale_class.rescale(task_id, calc_task(task_id, **kwargs)[0].to(dtype=torch.complex64), **kwargs)
+        else:
+            ans += calc_task(task_id, **kwargs)[0]
 stop_event.value = True
 process.join()
 torch.cuda.synchronize()
 time_end = time.time()
 dist.barrier()
 total_time = torch.tensor([time_end-time_begin]).to(device)
-dist.all_reduce(total_time, dist.ReduceOp.MAX)
+# dist.all_reduce(total_time, dist.ReduceOp.MAX)
 ################### Calculate energy coonsumption ###############################
 energy = utils.cal_energy(world_size//node_world_size, node_world_size, trace_path)
 if world_rank == 0:
@@ -342,7 +360,6 @@ if world_rank == 0:
 
 ######################### Reduce answer ########################################
 del stemtensor; torch.cuda.empty_cache()
-ans = scale_class.rescale(task_id, ans.to(dtype=torch.complex64),  **kwargs)
 torch.cuda.synchronize()
 time_begin = time.time()
 ans = utils.reduceAns(ans, reduce_job, **kwargs)
@@ -353,3 +370,4 @@ if world_rank == 0:
     print(f"save result in {result_path}/ntask{ntask*subtasks-1}/", flush = True)
 if subtask_idx == 0:
     torch.save(ans.cpu(), f"{result_path}/ntask{ntask*subtasks-1}/rank{subtask_rank}.pt")
+    print(ans.sum(), flush = True)

@@ -85,6 +85,7 @@ class Scale_Class:
         '''
         subtask_gps = kwargs["subtask_gps"]
         subtask_idx = kwargs['subtask_idx']
+        subtask_world_size = kwargs["subtask_world_size"]
         alpha = 1
         if isinstance(tensor_i, torch.Tensor):
             max0 = torch.view_as_real(tensor_i).max().abs()
@@ -96,12 +97,16 @@ class Scale_Class:
 
         dist.all_reduce(maxi, dist.ReduceOp.MAX, group = subtask_gps[subtask_idx])
 
-        if maxi.item() < 10**-3:
-            alpha = 10**7
+        if subtask_world_size == 8:
+            if maxi.item() < 10**-4:
+                alpha = torch.ones_like(maxi)*10000
+        else:
+            if maxi.item() < 10**-3:
+                alpha = 10**7
 
         self.scales[0, nstep] = alpha
-        if alpha != 1 and kwargs["subtask_rank"] == 0:
-            print(f"maxi.item() {maxi.item()}, task_id {task_id}, subtask_idx {subtask_idx}", flush=True)
+        # if alpha != 1 and kwargs["subtask_rank"] == 0:
+        #     print(f"maxi.item() {maxi.item()}, task_id {task_id}, subtask_idx {subtask_idx}", flush=True)
 
         return alpha
 

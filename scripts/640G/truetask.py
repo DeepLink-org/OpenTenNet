@@ -243,9 +243,9 @@ def cont_nsch_split(tensors, nsch, task_id, **kwargs):
                     # torch.cuda.empty_cache()
                     tensors[i] = EinsumGeneral(step['ein_2'], tensors[i], tensors[j], **kwargs)
                 tensors[j] = []
-            if world_rank == 0:
-                if kwargs['alpha'] != 1:
-                    print(f"kwargs['alpha'] {kwargs['alpha']}", flush=True)
+            # if world_rank == 0:
+            #     if kwargs['alpha'] != 1:
+            #         print(f"kwargs['alpha'] {kwargs['alpha']}", flush=True)
 
     if type(tensors[i]) == utils.MgTensorSplit:
         return torch.cat([x for x in tensors[i].curtensors])
@@ -359,3 +359,4 @@ torch.cuda.synchronize()
 time_end = time.time()
 if world_rank == 0:
     print(f"Reduce answer used time {round(time_end-time_begin, 3)}s", flush = True)
+    print(ans.sum(), flush = True)

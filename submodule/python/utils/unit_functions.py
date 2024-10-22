@@ -54,13 +54,8 @@ def modify_eq(equation, **kwargs):
 
 def fill_beffer_data(input, **kwargs):
     shape = list(input.shape); shape = [2] + shape
-    if isinstance(kwargs.get('buffer_tensors'), torch.Tensor):
-        # Reshape buffer tensors
-        buffer_tensors = kwargs["buffer_tensors"]
-        buffer_tensors = buffer_tensors.flatten()[:input.numel()*2].view(shape)
-    else:
-        # warnings.warn("Buffer tensors not given, creating tensors")
-        buffer_tensors = torch.empty(shape, dtype = torch.complex32, device = input.device)
+    
+    buffer_tensors = torch.empty(shape, dtype = torch.complex32, device = input.device)
 
     buffer1, buffer2 = buffer_tensors[0], buffer_tensors[1]
 
@@ -89,7 +84,6 @@ def torch_einsum(equation, input_0, input_1, **kwargs):
     alpha = kwargs["alpha"] if "alpha" in kwargs.keys() else 1
     beta = kwargs['beta'] if "beta" in kwargs.keys() else 0
     dtype_ = kwargs.get("dtype_")
-
     ##########  modify equation and tensors ########## 
     if dtype_ == "complex32Toririhalf" or dtype_ == "complex32Torriihalf":
         eq_org = equation
@@ -102,12 +96,14 @@ def torch_einsum(equation, input_0, input_1, **kwargs):
         ########## Modify equation ###########
         equation = modify_eq(equation, **kwargs)
         torch.cuda.empty_cache()
+        buffer_tensors.mul_(alpha)
         output = torch.einsum(equation, torch.view_as_real(input_0), torch.view_as_real(buffer_tensors))
-        output.mul_(alpha)
+        # output.mul_(alpha)
         
     else:
+        input_1.mul_(alpha)
         output = torch.einsum(equation, input_0, input_1)
-        output.mul_(alpha)
+        # output.mul_(alpha)
     
     return torch.view_as_complex(output).contiguous()
 
