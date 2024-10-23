@@ -189,8 +189,8 @@ def EinsumGeneralV2_choose_method(nstep, mgtensor, ein, tensor_j, **kwargs):
     # EinsumGeneralV2(mgtensor.nexttensor, ein, mgtensor.curtensor, tensor_j, **kwargs)
     utils.Einsum2Matmul(ein, mgtensor, tensor_j, **kwargs)
     # mgtensor.setnewtensor(newshape)
-    if world_rank == 0:
-        print(f"nstep {nstep}, mgtensor.curtensor {mgtensor.curtensor.sum()}", flush = True)
+    # if world_rank == 0:
+        # print(f"nstep {nstep}, mgtensor.curtensor {mgtensor.curtensor.sum()}", flush = True)
 
 
 def cont_nsch_split(tensors, nsch, task_id, **kwargs):

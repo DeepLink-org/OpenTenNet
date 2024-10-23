@@ -101,8 +101,8 @@ class Scale_Class:
             if maxi.item() < 10**-4:
                 alpha = torch.ones_like(maxi)*10000
         else:
-            if maxi.item() < 10**-3:
-                alpha = 10**7
+            if maxi.item() < 10**-4:
+                alpha = torch.ones_like(maxi)*10000
 
         self.scales[0, nstep] = alpha
         # if alpha != 1 and kwargs["subtask_rank"] == 0:
