@@ -15,8 +15,7 @@ from torch.profiler import profile, record_function, ProfilerActivity
 from cutensor.torch import EinsumGeneral, EinsumGeneralV2, getOutputShape
 import utils
 
-import vec_h28
-import vec_82h
+import Quant
 
 args = utils.parse_args()
 
@@ -137,12 +136,12 @@ class MgTensor:
                 numel = torch.tensor(sgtensor.shape).prod().item()
                 n = int(log(numel, 2))
                 self.shape = [2]*(n-1)
-                vec_82h.int82half(sgtensor.view(torch.int8).view(-1), torch.view_as_real(self.curtensor[:]).view(-1), pow_idx, scale)
+                Quant.Int8ToFH(sgtensor.view(torch.int8).view(-1), torch.view_as_real(self.curtensor[:]).view(-1), pow_idx, scale)
             else:
                 print(f"ERROR, not implemented for this type", flush=True)
                 
     
-    def einsum(self, nstep, ein, insg2, task_id, **kwargs):
+    def einsum(self, nstep, ein, insg2, task_id, mnmodes, mgmodes, **kwargs):
         typeCom = kwargs["typeCom"]
         ein_list = re.split('->|,', ein)
         mgchar = list(ein_list[2][:mgmodes])
@@ -303,7 +302,7 @@ def cont_nsch_split(tensors, tensors_p2, nsch, task_id, mgmodes = mgmodes, **kwa
     tensori_p2tmp = tensors[i].curtensor[1]
     tensori_p2 = torch.empty(tensors[i].curtensor.shape[2:], dtype = torch.complex32, device = device)
     tensori_p2 = tensori_p2.view(torch.int8)
-    vec_h28.half2int8(torch.view_as_real(tensori_p2tmp).view(-1), tensori_p2.view(-1), 5., scale_p2)
+    Quant.FHtoInt8(torch.view_as_real(tensori_p2tmp).view(-1), tensori_p2.view(-1), 5., scale_p2)
 
     shape = tensors[i].curtensor[0].shape
     # tensori_p2 = torch.clone(tensors[i].curtensor[1])
