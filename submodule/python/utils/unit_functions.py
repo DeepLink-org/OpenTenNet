@@ -88,6 +88,29 @@ def fill_beffer_data(input, **kwargs):
     return buffer1, buffer2, buffer_tensors
 
 
+def einOutshape(formula, shape_A, shape_B):
+    # 解析爱因斯坦求和公式
+    input_A, input_B, output = re.split("->|,", formula)
+
+    # 创建一个字典来存储每个索引对应的维度
+    index_to_dim = {}
+
+    # 将 A 的索引和维度映射到字典中
+    for idx, dim in zip(input_A, shape_A):
+        index_to_dim[idx] = dim
+
+    # 将 B 的索引和维度映射到字典中
+    for idx, dim in zip(input_B, shape_B):
+        index_to_dim[idx] = dim
+
+    # 计算输出张量的形状
+    output_shape = []
+    for idx in output:
+        output_shape.append(index_to_dim[idx])
+
+    return output_shape
+
+
 def Einsum2Matmul(equation, mgtensor, input1, **kwargs):
     ein_list = re.split("->|,", equation)
     recomputation = kwargs["recomputation"] if "recomputation" in kwargs.keys() else 0
@@ -105,15 +128,12 @@ def Einsum2Matmul(equation, mgtensor, input1, **kwargs):
         dtype_ = kwargs.get("dtype_")
         ##########  modify equation and tensors ##########
         if dtype_ == "complex32Toririhalf" or dtype_ == "complex32Torriihalf":
-            if recomputation and mgtensor.curtensor.numel() == 2 ** (
-                len(ein_list[0]) - 1
-            ):
+            if recomputation:
                 assert (
                     ein_list[0][0] == ein_list[2][0]
                 ), "The first modes in input1 and output should be the same"
-                outShape = [1] + [2] * (len(ein_list[2]) - 1)
-            else:
-                outShape = [2] * (len(ein_list[2]))
+
+            outShape = einOutshape(equation, mgtensor.curtensor.shape, input1.shape)
 
             eq_org = equation
             in1_buffer1, in1_buffer2, buffer_tensors = fill_beffer_data(
@@ -126,13 +146,15 @@ def Einsum2Matmul(equation, mgtensor, input1, **kwargs):
             in0 = (
                 torch.view_as_real(mgtensor.curtensor)
                 .flatten()
-                .view([-1, 2 ** (Ncommon + 1)])
+                .view(
+                    [-1, 2 * torch.tensor(mgtensor.curtensor.shape[-Ncommon:]).prod()]
+                )
             )
             assert in0.is_contiguous()
             in1 = (
                 torch.view_as_real(buffer_tensors)
                 .flatten()
-                .view([-1, 2 ** (Ncommon + 1)])
+                .view([-1, 2 * torch.tensor(buffer_tensors.shape[-Ncommon:]).prod()])
                 .T
             )
             output = (
@@ -145,12 +167,7 @@ def Einsum2Matmul(equation, mgtensor, input1, **kwargs):
             mgtensor.setnewtensor(outShape)
 
             ein_list = re.split("->|,", equation)
-            try:
-                output = output.view(outShape + [2])
-            except:
-                import pdb
-
-                pdb.set_trace()
+            output = output.view(outShape + [2])
 
             tmp = output.permute(
                 [(ein_0 + ein_list[1][0] + ein_1).find(x) for x in ein_list[2]]
@@ -160,8 +177,6 @@ def Einsum2Matmul(equation, mgtensor, input1, **kwargs):
             ).copy_(tmp)
 
             mgtensor.setnewtensor(outShape)
-            # if mgtensor.curtensor.numel() != 2 ** (len(ein_list[2])-1):
-            #     import pdb; pdb.set_trace()
 
         else:
             raise NotImplementedError("Not implemented for float type yet.")
@@ -192,11 +207,7 @@ def Einsum2Matmul(equation, mgtensor, input1, **kwargs):
 
         ein0permuterd, ein1permuted = input_permutedEin(ein_list[0], ein_list[1])
 
-        tmp = (
-            mgtensor.curtensor[: 2 ** len(ein_list[0])]
-            .view([2] * len(ein_list[0]))
-            .permute([ein_list[0].find(x) for x in ein0permuterd])
-        )
+        tmp = mgtensor.curtensor.permute([ein_list[0].find(x) for x in ein0permuterd])
 
         mgtensor.nexttensor[: tmp.numel()].view(tmp.shape).copy_(tmp)
         mgtensor.setnewtensor(tmp.shape)
@@ -208,45 +219,9 @@ def Einsum2Matmul(equation, mgtensor, input1, **kwargs):
         Einsum2Matmul(equation, mgtensor, input1, **kwargs)
 
     else:
-        raise NotImplementedError("Not implemented for einsum including reduction yet.")
-
-
-def torch_matmul(equation, ein_0, ein_1, Ncommon, ein_out, input_0, input_1, **kwargs):
-    alpha = kwargs["alpha"] if "alpha" in kwargs.keys() else 1
-    beta = kwargs["beta"] if "beta" in kwargs.keys() else 0
-    dtype_ = kwargs.get("dtype_")
-    ##########  modify equation and tensors ##########
-    if dtype_ == "complex32Toririhalf" or dtype_ == "complex32Torriihalf":
-        eq_org = equation
-        in1_buffer1, in1_buffer2, buffer_tensors = fill_beffer_data(input_1, **kwargs)
-        equation = modify_eq(equation, **kwargs)
-        # torch.cuda.empty_cache()
-        buffer_tensors.mul_(alpha)
-
-        in0 = torch.view_as_real(input_0).flatten().view([-1, 2 ** (Ncommon + 1)])
-        assert in0.is_contiguous()
-        in1 = (
-            torch.view_as_real(buffer_tensors)
-            .flatten()
-            .view([-1, 2 ** (Ncommon + 1)])
-            .T
+        raise NotImplementedError(
+            "Not implemented for einsum which includes reduction yet."
         )
-        output = torch.empty(
-            [in0.shape[0], in1.shape[1]], device=in0.device, dtype=in0.dtype
-        )
-        torch.matmul(input=in0, other=in1, out=output)
-        output = output.view([2] * (len(ein_out) + 1))
-        ein_list = re.split("->|,", equation)
-
-        output = output.permute(
-            [(ein_0 + ein_list[1][0] + ein_1).find(x) for x in ein_list[2]]
-        ).contiguous()
-        output = torch.view_as_complex(output)
-
-    else:
-        raise NotImplementedError("This functionality has not been implemented yet.")
-
-    return output
 
 
 def torch_einsum(equation, input_0, input_1, **kwargs):
