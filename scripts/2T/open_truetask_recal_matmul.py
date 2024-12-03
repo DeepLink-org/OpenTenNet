@@ -701,12 +701,17 @@ for s in range(ntask):
         ans = calc_task(task_id, **kwargs)[0]
     else:
         ans += calc_task(task_id, **kwargs)[0]
+    torch.cuda.empty_cache()
+    if world_rank == 0:
+        print(f"Iteration {s} is finished", flush = True)
 stop_event.value = True
 process.join()
 torch.cuda.synchronize()
 time_end = time.time()
 dist.barrier()
 total_time = torch.tensor([time_end - time_begin]).to(device)
+if subtask_rank == 0:
+    print(f"Truetask used time {round(total_time[0].item(), 3)} s on subtask {subtask_idx}", flush=True)
 dist.all_reduce(total_time, dist.ReduceOp.MAX)
 ################### Calculate energy coonsumption ###############################
 energy = utils.cal_energy(world_size // node_world_size, node_world_size, trace_path)
@@ -719,6 +724,8 @@ if world_rank == 0:
     print(f"energy information saved to {trace_path}/energy/", flush=True)
     print(f"total consumption {energy} kwh", flush=True)
     print(f"Truetask used time {round(total_time[0].item(), 3)} s", flush=True)
+    print(f"torch.cuda.max_memory_allocated() {torch.cuda.max_memory_allocated()}")
+    print(f"torch.cuda.max_memory_reserved() {torch.cuda.max_memory_reserved()}")
 
 ######################### Reduce answer ########################################
 del stemtensor
@@ -739,7 +746,6 @@ if subtask_idx == 0:
     # print(f"ans.sum() {ans.sum()}", flush = True)
 ######################### Calculate fidelity ###################################
 import numpy as np
-import pandas as pd
 
 if world_rank == 0:
     print(f"Calculating fidelity ...", flush=True)

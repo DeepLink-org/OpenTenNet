@@ -181,7 +181,7 @@ __global__ void Half2Int4_kernel(Pack<c10::Half, threadnum>* in_tensor, c10::Hal
     max_input[threadIdx.x] = max_local ;
     min_input[threadIdx.x] = min_local ;
     __syncthreads();
-    #pragma unroll
+    //#pragma unroll
     if(threadIdx.x < (blockDim.x*threadnum / groupsize) ){
         // nv samle   cub库
         int length = groupsize/threadnum; // for shared data

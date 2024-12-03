@@ -2,7 +2,7 @@ import os
 import torch
 import torch.distributed as dist
 from torch.distributed import ReduceOp
-from cutensor.torch import EinsumGeneralV2, getOutputShape
+#from cutensor.torch import EinsumGeneralV2, getOutputShape
 import re
 import argparse
 import time

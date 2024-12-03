@@ -9,7 +9,7 @@ import torch.distributed as dist
 import re
 import numpy as np
 from torch.profiler import profile, record_function, ProfilerActivity
-from cutensor.torch import EinsumGeneral, EinsumGeneralV2, getOutputShape
+#from cutensor.torch import EinsumGeneral, EinsumGeneralV2, getOutputShape
 import utils
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -325,7 +325,7 @@ kwargs["autotune"] = False # remember to close autotune
 com_time = 0
 ########## Supervise energy consumption #######
 import multiprocessing
-from utils import monitor_gpu_power
+#from utils import monitor_gpu_power
 
 ################### PERFORM TrueTask #########################################
 ntask = args.ntask // gpus_per_task
@@ -335,8 +335,8 @@ with torch.profiler.profile(
     torch.cuda.synchronize()
     time_begin = time.time()
     stop_event = multiprocessing.Value('b', False)
-    process = multiprocessing.Process(target=monitor_gpu_power, args=(stop_event, node_idx, node_rank, trace_path))
-    process.start()
+    #process = multiprocessing.Process(target=monitor_gpu_power, args=(stop_event, node_idx, node_rank, trace_path))
+    #process.start()
 
     for s in range(ntask):
         task_id = s + subtask_idx * ntask
@@ -345,7 +345,7 @@ with torch.profiler.profile(
         else:
             ans += scale_class.rescale(task_id, calc_task(task_id, **kwargs)[0].to(dtype=torch.complex64), **kwargs)
     stop_event.value = True
-    process.join()
+    #process.join()
     torch.cuda.synchronize()
     time_end = time.time()
 dist.barrier()
@@ -365,9 +365,9 @@ if world_rank == 0:
 if world_rank == 0:
     print(f"energy information saved to {trace_path}/energy/", flush=True)
 dist.barrier()
-energy = utils.cal_energy(world_size//node_world_size, node_world_size, trace_path)
-if world_rank == 0:
-    print(f"total consumption {energy} kwh", flush=True)
+#energy = utils.cal_energy(world_size//node_world_size, node_world_size, trace_path)
+#if world_rank == 0:
+#    print(f"total consumption {energy} kwh", flush=True)
 # ################### Reduce results to the first rank ##########################
 # cat_res = utils.reduceAndCat(ans, reduce_job, **kwargs)
 # if world_rank == 0:

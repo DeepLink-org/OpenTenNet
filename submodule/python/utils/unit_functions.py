@@ -2,8 +2,9 @@ import torch
 import argparse
 import os
 import re
-
-
+import torch.distributed as dist
+import time
+FLOPS = 0
 def split_real_imag(tensor, **kwargs):
     if kwargs.get("dtype_") == "complex32Torriihalf":
         shape = tensor.shape
@@ -263,7 +264,22 @@ def Einsum2Matmul(equation, mgtensor, input1, **kwargs):
                 .flatten()[: in0.shape[0] * in1.shape[1]]
                 .view([in0.shape[0], in1.shape[1]])
             )
+            # torch.cuda.synchronize()
+            # time_begin = time.time()
+
             torch.matmul(input=in0, other=in1, out=output)
+
+            # torch.cuda.synchronize()
+            # time_end = time.time()
+            # FLOPs = in0.shape[0] * in1.shape[0] * in1.shape[1] * 2
+            # elapsed = time_end - time_begin
+            # FLOPS_tmp = torch.tensor(FLOPs / elapsed).to(in0.device)
+            # dist.all_reduce(FLOPS_tmp, dist.ReduceOp.SUM)
+            # global FLOPS
+            # if FLOPS_tmp > FLOPS:
+            #     FLOPS = FLOPS_tmp
+            #     if kwargs["world_rank"] == 0:
+            #         print(f"MAX FLOPS {FLOPS}", flush = True)
 
             mgtensor.setnewtensor(outShape)
 
@@ -476,7 +492,8 @@ def getFilePath(args, prefix="", **kwargs):
         f"{args.tensorNetSize}/{prefix}CAL{typeCal}_COM{typecom}_TUNE{args.autotune}"
     )
 
-    trace_path = f"{trace_root}/{path_stem}/Nodes{int(os.environ['nnodes'])}/{os.environ['time']}"
+    #trace_path = f"{trace_root}/{path_stem}/Nodes{int(os.environ['nnodes'])}/{os.environ['time']}"
+    trace_path = f"{trace_root}/{path_stem}/Nodes{int(os.environ['nnodes'])}"
     if world_rank == 0:
         if not os.path.exists(trace_path):
             os.makedirs(trace_path)

@@ -1,4 +1,4 @@
-import py3nvml
+import wnvml
 import time
 import os
 import torch
@@ -7,11 +7,11 @@ import torch.distributed as dist
 def monitor_gpu_power(stop_event, node_idx, node_rank, trace_path):
     res_power = []
     res_timer = []
-    py3nvml.py3nvml.nvmlInit()
+    wnvml.nvmlInit()
     start_time = time.time()
     while not stop_event.value:
-        device = py3nvml.py3nvml.nvmlDeviceGetHandleByIndex(node_rank)
-        power = py3nvml.py3nvml.nvmlDeviceGetPowerUsage(device) / 1000.0
+        device = wnvml.nvmlDeviceGetHandleByIndex(node_rank)
+        power = wnvml.nvmlDeviceGetPowerUsage(device) / 1000.0
         current_time = time.time() - start_time
         res_power.append(power)
         res_timer.append(current_time)
